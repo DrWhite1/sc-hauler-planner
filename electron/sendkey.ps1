@@ -1,12 +1,11 @@
 param([int]$vk)
 
-try {
-  Add-Type -TypeDefinition @"
+Add-Type -TypeDefinition @"
 using System;
 using System.Runtime.InteropServices;
-public class KInput {
-  [DllImport("user32.dll", SetLastError=true)]
-  public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+public class GameInput {
+  [DllImport("user32.dll")] public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint uCode, uint uMapType);
 
   [StructLayout(LayoutKind.Sequential)]
   public struct INPUT {
@@ -21,30 +20,31 @@ public class KInput {
   }
 
   [StructLayout(LayoutKind.Sequential)]
-  public struct MOUSEINPUT {
-    public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo;
-  }
+  public struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr dwExtraInfo; }
 
   [StructLayout(LayoutKind.Sequential)]
   public struct KEYBDINPUT {
-    public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo;
+    public ushort wVk;
+    public ushort wScan;
+    public uint dwFlags;
+    public uint time;
+    public IntPtr dwExtraInfo;
   }
 }
 "@
 
-  $down = New-Object KInput+INPUT
-  $down.type = 1
-  $down.U.ki.wVk = $vk
+$scan = [GameInput]::MapVirtualKey($vk, 0)
 
-  $up = New-Object KInput+INPUT
-  $up.type = 1
-  $up.U.ki.wVk = $vk
-  $up.U.ki.dwFlags = 2
+$down = New-Object GameInput+INPUT
+$down.type = 1
+$down.U.ki.wScan = $scan
+$down.U.ki.dwFlags = 0x0008  # KEYEVENTF_SCANCODE
 
-  $size = [System.Runtime.InteropServices.Marshal]::SizeOf([type][KInput+INPUT])
-  $result = [KInput]::SendInput(2, @($down, $up), $size)
-  Write-Output "sent $result"
-} catch {
-  Write-Error $_.Exception.Message
-  exit 1
-}
+$up = New-Object GameInput+INPUT
+$up.type = 1
+$up.U.ki.wScan = $scan
+$up.U.ki.dwFlags = 0x0008 -bor 0x0002  # SCANCODE + KEYUP
+
+$size = [System.Runtime.InteropServices.Marshal]::SizeOf([type][GameInput+INPUT])
+$result = [GameInput]::SendInput(2, @($down, $up), $size)
+Write-Output "sent $result scan $scan"
