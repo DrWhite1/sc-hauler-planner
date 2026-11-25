@@ -3,6 +3,9 @@ const path = require("path");
 const { exec } = require("child_process");
 const isDev = process.env.NODE_ENV === "development";
 
+app.commandLine.appendSwitch("enable-features", "SpeechRecognition");
+app.commandLine.appendSwitch("enable-speech-input");
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -19,11 +22,11 @@ function createWindow() {
   });
 
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
-    if (permission === "media" || permission === "microphone") {
-      callback(true);
-    } else {
-      callback(false);
-    }
+    callback(permission === "media" || permission === "microphone");
+  });
+
+  session.defaultSession.setPermissionCheckHandler((_wc, permission) => {
+    return permission === "media" || permission === "microphone";
   });
 
   if (isDev) {
