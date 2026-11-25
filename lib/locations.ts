@@ -7,11 +7,11 @@ export type Location = {
 };
 
 export const LOCATIONS: Location[] = [
-  // Stanton - Main stations (have external freight elevators)
+  // Stanton - Main stations (Everus, Tressler and Seraphim have cargo decks)
   { name: "Everus Harbor", externalPort: true },
   { name: "Port Tressler", externalPort: true },
   { name: "Seraphim Station", externalPort: true },
-  { name: "Baijini Point", externalPort: true },
+  { name: "Baijini Point", externalPort: false }, // verified in game: no cargo deck
   { name: "Port Olisar", externalPort: false },
   { name: "Grim HEX", externalPort: false },
 
@@ -45,7 +45,7 @@ export const LOCATIONS: Location[] = [
   { name: "Pyro Gateway", externalPort: true },
   { name: "Nyx Gateway", externalPort: true },
   { name: "Terra Gateway", externalPort: true },
-  { name: "Magnus Gateway", externalPort: false },
+  { name: "Magnus Gateway", externalPort: true }, // verified in game
   { name: "Stanton Gateway (Pyro)", externalPort: true },
   { name: "Nyx Gateway (Pyro)", externalPort: false },
   { name: "Stanton Gateway (Nyx)", externalPort: false },

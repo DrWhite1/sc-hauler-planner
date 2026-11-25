@@ -4,12 +4,12 @@ import assert from "node:assert/strict";
 // Cargo-deck (EXT) locations, 4.10.3
 for (const name of [
   "Ruin Station", "Checkmate", "Orbituary", "Gaslight", "Megumi Refueling",
-  "Everus Harbor", "Port Tressler", "Seraphim Station", "Baijini Point",
+  "Everus Harbor", "Port Tressler", "Seraphim Station", "Magnus Gateway",
   "Pyro Gateway", "Nyx Gateway", "Terra Gateway", "Stanton Gateway (Pyro)", "Levski",
 ]) {
   assert.equal(hasExternalPort(name), true, name);
 }
-for (const name of ["MIC-L5 Modern Icarus", "Patch City", "Nyx Gateway (Pyro)", "Lorville", "Grim HEX"]) {
+for (const name of ["Baijini Point", "Security Post Kareah", "Sakura Sun Goldenrod Workcenter", "MIC-L5 Modern Icarus", "Patch City", "Nyx Gateway (Pyro)", "Lorville", "Grim HEX"]) {
   assert.equal(hasExternalPort(name), false, name);
 }
 

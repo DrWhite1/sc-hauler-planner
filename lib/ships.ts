@@ -8,7 +8,9 @@ export type Ship = {
 
 // Cargo capacities checked against Star Citizen 4.10.3-LIVE game data
 // (Star Citizen Wiki API / starcitizen.tools) and UEX Corp (uexcorp.space), November 2026.
-// Where the two disagreed the in-game value was used. Sorted by capacity.
+// Where the two disagreed the in-game value was used. Max container sizes for Nomad, C1,
+// Andromeda, Zeus CL, RAFT, Railen, Hull B/C, Caterpillar, Golem OX and Ironclad were verified
+// in game (4.10.3, Nov 2026). Sorted by capacity.
 export const SHIPS: Ship[] = [
   { id: "mpuv-cargo", name: "MPUV Cargo", scu: 2, maxContainer: 2 },
   { id: "avenger-titan", name: "Avenger Titan", scu: 8, maxContainer: 4 },
@@ -19,15 +21,15 @@ export const SHIPS: Ship[] = [
   { id: "hyun", name: "Gatac Hyūn", scu: 32, maxContainer: 8 },
   { id: "freelancer-dur", name: "Freelancer DUR", scu: 36, maxContainer: 16 },
   { id: "cutlass-black", name: "Cutlass Black", scu: 46, maxContainer: 16 },
-  { id: "c1-spirit", name: "C1 Spirit", scu: 64, maxContainer: 32 },
-  { id: "golem-ox", name: "Golem OX", scu: 64, maxContainer: 32 },
+  { id: "c1-spirit", name: "C1 Spirit", scu: 64, maxContainer: 16 },
+  { id: "golem-ox", name: "Golem OX", scu: 64, maxContainer: 16 },
   { id: "hull-a", name: "Hull A", scu: 64, maxContainer: 16 },
   { id: "freelancer", name: "Freelancer", scu: 66, maxContainer: 16 },
   { id: "corsair", name: "Corsair", scu: 72, maxContainer: 32 },
-  { id: "andromeda", name: "Constellation Andromeda", scu: 96, maxContainer: 16 },
+  { id: "andromeda", name: "Constellation Andromeda", scu: 96, maxContainer: 32 },
   { id: "mercury", name: "Mercury Star Runner", scu: 114, maxContainer: 32 },
   { id: "freelancer-max", name: "Freelancer MAX", scu: 120, maxContainer: 32 },
-  { id: "zeus-cl", name: "Zeus Mk II CL", scu: 128, maxContainer: 32 },
+  { id: "zeus-cl", name: "Zeus Mk II CL", scu: 128, maxContainer: 16 },
   { id: "constellation-taurus", name: "Constellation Taurus", scu: 174, maxContainer: 32 },
   { id: "raft", name: "RAFT", scu: 192, maxContainer: 32 },
   { id: "a2-hercules", name: "A2 Hercules", scu: 216, maxContainer: 32 },
@@ -36,7 +38,7 @@ export const SHIPS: Ship[] = [
   { id: "carrack", name: "Carrack", scu: 456, maxContainer: 16 },
   { id: "hull-b", name: "Hull B", scu: 512, maxContainer: 32 },
   { id: "m2-hercules", name: "M2 Hercules", scu: 522, maxContainer: 32 },
-  { id: "caterpillar", name: "Caterpillar", scu: 576, maxContainer: 32 },
+  { id: "caterpillar", name: "Caterpillar", scu: 576, maxContainer: 16 },
   { id: "railen", name: "Railen", scu: 640, maxContainer: 32 },
   { id: "c2-hercules", name: "C2 Hercules", scu: 696, maxContainer: 32 },
   // 64 SCU in the rear hangar + 656 SCU in the Cargo module (4.10.3).
