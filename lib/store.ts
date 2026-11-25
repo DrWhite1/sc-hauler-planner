@@ -1,6 +1,6 @@
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
-import type { Ship } from "./ships";
+import { findShip, type Ship } from "./ships";
 
 export type Leg = {
   type: "pickup" | "dropoff";
@@ -36,6 +36,8 @@ type State = {
   missions: Mission[];
   completedStops: string[];
   voiceCommands: VoiceCommand[];
+  gridFit: boolean; // cargo grid: true = fit to window, false = actual size (scroll)
+  setGridFit: (fit: boolean) => void;
   setShip: (ship: Ship | null) => void;
   setCurrentLocation: (loc: string) => void;
   addMission: (mission: Omit<Mission, "id">) => void;
@@ -70,6 +72,8 @@ export const useHaulerStore = create<State>()(
       missions: [],
       completedStops: [],
       voiceCommands: defaultVoice,
+      gridFit: true,
+      setGridFit: (fit) => set({ gridFit: fit }),
       setShip: (ship) => set({ selectedShip: ship }),
       setCurrentLocation: (loc) => set({ currentLocation: loc }),
       addMission: (mission) =>
@@ -108,6 +112,18 @@ export const useHaulerStore = create<State>()(
           voiceCommands: state.voiceCommands.filter((c) => c.id !== id),
         })),
     }),
-    { name: "sc-hauler-store" }
+    {
+      name: "sc-hauler-store",
+      // The whole Ship object is saved, so refresh it from the current ship list on load.
+      // Otherwise corrected capacities would never reach people who picked a ship before.
+      merge: (persisted, current) => {
+        const saved = (persisted || {}) as Partial<State>;
+        return {
+          ...current,
+          ...saved,
+          selectedShip: saved.selectedShip ? findShip(saved.selectedShip.id) : current.selectedShip,
+        };
+      },
+    }
   )
 );
