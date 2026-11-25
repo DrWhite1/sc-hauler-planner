@@ -3,28 +3,6 @@
 import { useState, useCallback, useEffect } from "react";
 import { createWorker } from "tesseract.js";
 import { useHaulerStore, type Leg } from "@/lib/store";
-import { LOCATIONS } from "@/lib/locations";
-
-const KNOWN_COMMODITIES = ["Quartz", "Waste", "Scrap", "Hydrogen", "Agricium", "Laranite", "Beryl", "Diamond", "Gold", "Copper", "Iron", "Titanium", "Tungsten", "Medical", "Food", "Stims"];
-
-function findLocationInText(text: string): string | null {
-  const lower = text.toLowerCase();
-  for (const loc of LOCATIONS) {
-    const name = loc.name.toLowerCase();
-    if (lower.includes(name)) return loc.name;
-    // Fuzzy: check if most words match
-    const words = name.split(/\s+/).filter((w) => w.length > 3);
-    if (words.length > 0 && words.every((w) => lower.includes(w))) return loc.name;
-  }
-  // Special cases for common OCR errors
-  if (/sakura\s*sun/i.test(text)) return "Sakura Sun Goldenrod Workcenter";
-  if (/goldenrod/i.test(text)) return "Sakura Sun Goldenrod Workcenter";
-  if (/port\s*tress/i.test(text) || /tressler/i.test(text)) return "Port Tressler";
-  if (/everus/i.test(text)) return "Everus Harbor";
-  if (/seraphim/i.test(text)) return "Seraphim Station";
-  if (/baijini/i.test(text)) return "Baijini Point";
-  return null;
-}
 
 function parseContractText(text: string) {
   const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
@@ -41,64 +19,69 @@ function parseContractText(text: string) {
     const nums = full.match(/[\d,]{5,}/g) || [];
     for (const n of nums) {
       const v = parseInt(n.replace(/,/g, ""), 10);
-      if (v >= 20000 && v < 500000) {
-        reward = Math.max(reward, v);
-      }
+      if (v >= 20000 && v < 500000) reward = Math.max(reward, v);
     }
-  }
-
-  // SCU from "0/6 SCU" or "6 SCU"
-  let totalScu = 0;
-  const scuMatch = full.match(/(\d+)\/(\d+)\s*SCU/i) || full.match(/(\d+)\s*SCU/i);
-  if (scuMatch) {
-    totalScu = parseInt(scuMatch[2] || scuMatch[1], 10);
-  }
-
-  // Commodity
-  let commodity = "Cargo";
-  for (const c of KNOWN_COMMODITIES) {
-    if (full.toLowerCase().includes(c.toLowerCase())) {
-      commodity = c;
-      break;
-    }
-  }
-
-  // Locations
-  const pickupLoc = findLocationInText(full);
-  let dropoffLoc: string | null = null;
-
-  // Look for delivery location specifically
-  const deliverLine = full.match(/deliver[^.]{0,80}/i);
-  if (deliverLine) {
-    dropoffLoc = findLocationInText(deliverLine[0]);
-  }
-  if (!dropoffLoc) {
-    dropoffLoc = findLocationInText(full);
-    if (dropoffLoc === pickupLoc) dropoffLoc = null;
-  }
-
-  // If we found one location, try to find another
-  if (pickupLoc && !dropoffLoc) {
-    const afterPickup = full.split(new RegExp(pickupLoc, "i"))[1] || "";
-    dropoffLoc = findLocationInText(afterPickup);
   }
 
   const collects: { commodity: string; location: string; scu: number }[] = [];
   const delivers: { commodity: string; location: string; scu: number }[] = [];
 
-  if (pickupLoc) {
-    collects.push({ commodity, location: pickupLoc, scu: totalScu });
-  }
-  if (dropoffLoc) {
-    delivers.push({ commodity, location: dropoffLoc, scu: totalScu });
+  // Multi-leg: "Collect X from Y"
+  const collectRegex = /Collect\s+([A-Za-z\s]+?)\s+from\s+([A-Za-z0-9'\s\-\.]+?)(?:\.|$|\n)/gi;
+  let m;
+  while ((m = collectRegex.exec(full)) !== null) {
+    collects.push({
+      commodity: m[1].trim(),
+      location: m[2].trim().replace(/\s+/g, " "),
+      scu: 0,
+    });
   }
 
-  const pickup = pickupLoc || "";
-  const dropoff = dropoffLoc || "";
+  // Multi-leg: "Deliver 0/6 SCU of X to Y"
+  const deliverRegex = /Deliver\s+(\d+)\/(\d+)\s*SCU\s+of\s+([A-Za-z\s]+?)\s+to\s+([A-Za-z0-9'\s\-\.]+?)(?:\.|$|\n)/gi;
+  while ((m = deliverRegex.exec(full)) !== null) {
+    delivers.push({
+      commodity: m[3].trim(),
+      location: m[4].trim().replace(/\s+/g, " "),
+      scu: parseInt(m[2], 10),
+    });
+  }
+
+  // Fallback single SCU if no multi-leg found
+  if (delivers.length === 0) {
+    const scuMatch = full.match(/(\d+)\s*SCU/i);
+    const scu = scuMatch ? parseInt(scuMatch[1], 10) : 0;
+    if (collects.length > 0) {
+      delivers.push({
+        commodity: collects[0].commodity,
+        location: "",
+        scu,
+      });
+    }
+  }
+
+  // Match SCU to collects if missing
+  if (collects.length > 0 && delivers.length > 0 && collects[0].scu === 0) {
+    const totalDeliver = delivers.reduce((s, d) => s + d.scu, 0);
+    const perCollect = Math.round(totalDeliver / collects.length);
+    collects.forEach((c) => (c.scu = perCollect));
+  }
+
+  const totalScu = delivers.reduce((s, d) => s + d.scu, 0) || collects.reduce((s, c) => s + c.scu, 0);
+
+  const pickupLocs = [...new Set(collects.map((c) => c.location).filter(Boolean))];
+  const dropoffLocs = [...new Set(delivers.map((d) => d.location).filter(Boolean))];
+
+  const pickup = pickupLocs.length ? pickupLocs.slice(0, 3).join(" + ") : "";
+  const dropoff = dropoffLocs.length ? dropoffLocs.slice(0, 3).join(" + ") : "";
 
   const legs: Leg[] = [];
-  if (pickupLoc) legs.push({ type: "pickup", location: pickupLoc, scu: totalScu, commodity });
-  if (dropoffLoc) legs.push({ type: "dropoff", location: dropoffLoc, scu: totalScu, commodity });
+  for (const c of collects) {
+    if (c.location) legs.push({ type: "pickup", location: c.location, scu: c.scu, commodity: c.commodity });
+  }
+  for (const d of delivers) {
+    if (d.location) legs.push({ type: "dropoff", location: d.location, scu: d.scu, commodity: d.commodity });
+  }
 
   return {
     reward,
@@ -140,15 +123,16 @@ export function MissionOCR() {
 
       if (result.reward && result.pickup && result.dropoff) {
         addMission({
-          pickup: result.pickup.slice(0, 80),
-          dropoff: result.dropoff.slice(0, 80),
+          pickup: result.pickup.slice(0, 100),
+          dropoff: result.dropoff.slice(0, 100),
           reward: result.reward,
           scu: result.totalScu || 0,
           corporation: "Covalex",
           legs: result.legs.length > 0 ? result.legs : undefined,
           maxContainerSize: result.maxContainerSize,
         });
-        setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC`);
+        const legNote = result.legs.length > 2 ? ` · ${result.legs.length} legs` : "";
+        setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC${legNote}`);
       } else {
         setStatus("Partial data found — review below and add manually if needed");
       }
