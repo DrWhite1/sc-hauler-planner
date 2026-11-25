@@ -2,115 +2,25 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { createWorker } from "tesseract.js";
-import { useHaulerStore, type Leg } from "@/lib/store";
+import { useHaulerStore } from "@/lib/store";
+import { parseContractText } from "@/lib/parseContract";
 
-const LOCATION_ALIASES: Record<string, string> = {
-  tressler: "Port Tressler",
-  ressler: "Port Tressler",
-  goldenrod: "Sakura Sun Goldenrod Workcenter",
-  "sakura sun": "Sakura Sun Goldenrod Workcenter",
-  everus: "Everus Harbor",
-  seraphim: "Seraphim Station",
-  baijini: "Baijini Point",
-  brio: "Brio's Breaker Yard",
-  sacren: "Sacren's Plot",
-  "modern icarus": "MIC-L5 Modern Icarus",
-  "nb int": "NB Int. Spaceport",
-  spaceport: "NB Int. Spaceport",
-  arccorp: "ArcCorp Mining Area 157",
-  rayari: "Rayari Kaitag Research Outpost",
-  kaitag: "Rayari Kaitag Research Outpost",
-  hdms: "HDMS-Oparei",
-  oparei: "HDMS-Oparei",
-};
-
-function normalizeLocation(raw: string): string {
-  const lower = raw.toLowerCase();
-  for (const [key, val] of Object.entries(LOCATION_ALIASES)) {
-    if (lower.includes(key)) return val;
-  }
-  return raw.trim();
-}
-
-function parseContractText(text: string) {
-  const full = text.replace(/\s+/g, " ");
-
-  // Reward
-  let reward = 0;
-  const rewardMatch = full.match(/reward[^\d]*([\d,]{4,})/i);
-  if (rewardMatch) {
-    const v = parseInt(rewardMatch[1].replace(/,/g, ""), 10);
-    if (v >= 10000) reward = v;
-  }
-  if (!reward) {
-    const nums = full.match(/[\d,]{5,}/g) || [];
-    for (const n of nums) {
-      const v = parseInt(n.replace(/,/g, ""), 10);
-      if (v >= 20000 && v < 500000) reward = Math.max(reward, v);
-    }
-  }
-
-  const collects: { commodity: string; location: string; scu: number }[] = [];
-  const delivers: { commodity: string; location: string; scu: number }[] = [];
-
-  // All collect lines (global)
-  const collectRegex = /(?:collect|col)\s+([a-z]+)\s+(?:from|at)\s+([a-z'\s]+?)(?:\.|$|\n)/gi;
-  let m;
-  while ((m = collectRegex.exec(full)) !== null) {
-    const commodity = m[1].trim();
-    const location = normalizeLocation(m[2].trim());
-    if (commodity && location) {
-      collects.push({ commodity, location, scu: 0 });
-    }
-  }
-
-  // All deliver lines (global)
-  const deliverRegex = /(\d+)\/(\d+)\s*SCU\s+of\s+([a-z\s]+?)\s+to\s+([a-z'\s]+?)(?:\.|$|\n)/gi;
-  while ((m = deliverRegex.exec(full)) !== null) {
-    const scu = parseInt(m[2], 10);
-    const commodity = m[3].trim();
-    const location = normalizeLocation(m[4].trim());
-    if (commodity && location && scu > 0) {
-      delivers.push({ commodity, location, scu });
-    }
-  }
-
-  // Match SCU to collects
-  if (collects.length > 0 && delivers.length > 0) {
-    const totalDeliver = delivers.reduce((s, d) => s + d.scu, 0);
-    const perCollect = Math.round(totalDeliver / Math.max(1, collects.length));
-    collects.forEach((c) => {
-      if (c.scu === 0) c.scu = perCollect;
-    });
-  }
-
-  const totalScu = delivers.reduce((s, d) => s + d.scu, 0) || collects.reduce((s, c) => s + c.scu, 0);
-
-  const pickupLocs = [...new Set(collects.map((c) => c.location).filter(Boolean))];
-  const dropoffLocs = [...new Set(delivers.map((d) => d.location).filter(Boolean))];
-
-  const pickup = pickupLocs.length ? pickupLocs.slice(0, 4).join(" + ") : "";
-  const dropoff = dropoffLocs.length ? dropoffLocs.slice(0, 4).join(" + ") : "";
-
-  const legs: Leg[] = [];
-  for (const c of collects) {
-    if (c.location) legs.push({ type: "pickup", location: c.location, scu: c.scu, commodity: c.commodity });
-  }
-  for (const d of delivers) {
-    if (d.location) legs.push({ type: "dropoff", location: d.location, scu: d.scu, commodity: d.commodity });
-  }
-
-  return {
-    reward,
-    totalScu,
-    pickup,
-    dropoff,
-    collects,
-    delivers,
-    legs,
-    maxContainerSize: undefined,
-    lines: text.split(/\n+/),
-  };
+// Crop the right half of the screenshot (reward + objectives), upscale 2x, grayscale.
+async function cropRightHalf(file: File): Promise<Blob> {
+  const bmp = await createImageBitmap(file);
+  const x0 = Math.floor(bmp.width * 0.45);
+  const w = bmp.width - x0;
+  const scale = 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = w * scale;
+  canvas.height = bmp.height * scale;
+  const ctx = canvas.getContext("2d")!;
+  ctx.filter = "grayscale(1) contrast(1.3)";
+  ctx.drawImage(bmp, x0, 0, w, bmp.height, 0, 0, canvas.width, canvas.height);
+  bmp.close();
+  return await new Promise<Blob>((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png")
+  );
 }
 
 export function MissionOCR() {
@@ -130,26 +40,50 @@ export function MissionOCR() {
     try {
       const worker = await createWorker("eng");
       const { data } = await worker.recognize(file);
+
+      let text = data.text;
+      let result = parseContractText(text);
+
+      // Two-column contract screens often come out interleaved (story text mixed into
+      // the objectives). If the first read is incomplete, re-read only the right-hand
+      // half (rewards + objectives), upscaled and in grayscale, as one text block.
+      if (!result.complete) {
+        try {
+          const crop = await cropRightHalf(file);
+          await worker.setParameters({ tessedit_pageseg_mode: "6" as any });
+          const second = await worker.recognize(crop);
+          const result2 = parseContractText(second.data.text);
+          const score = (r: typeof result) =>
+            (r.complete ? 100 : 0) + r.delivers.length + r.collects.length + (r.reward ? 1 : 0);
+          if (score(result2) >= score(result)) {
+            result = result2;
+            text = second.data.text;
+          }
+        } catch (cropErr) {
+          console.warn("right-half OCR pass failed", cropErr);
+        }
+      }
       await worker.terminate();
 
-      const text = data.text;
       setExtracted(text);
-
-      const result = parseContractText(text);
       setParsed(result);
 
-      if (result.reward && result.pickup && result.dropoff) {
+      if (result.reward && result.pickup && result.dropoff && result.complete) {
         addMission({
           pickup: result.pickup.slice(0, 120),
           dropoff: result.dropoff.slice(0, 120),
           reward: result.reward,
           scu: result.totalScu || 0,
-          corporation: "Covalex",
+          corporation: result.corporation || "Unknown",
           legs: result.legs.length > 0 ? result.legs : undefined,
           maxContainerSize: result.maxContainerSize,
         });
         const legNote = result.legs.length > 2 ? ` · ${result.legs.length} legs` : "";
         setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC${legNote}`);
+      } else if (result.missingPickups.length > 0) {
+        setStatus(
+          `Read ${result.collects.length} of ${result.delivers.length} pickups (missing: ${result.missingPickups.join(", ")}). Not added. Re-crop the screenshot or add manually.`
+        );
       } else {
         setStatus("Partial data found — review below and add manually if needed");
       }
