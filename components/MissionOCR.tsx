@@ -11,6 +11,7 @@ function parseContractText(text: string) {
   let reward = 0;
   const candidates: number[] = [];
 
+  // Reward near "Reward" or "aUEC"
   for (const line of lines) {
     if (/reward|auec|aec/i.test(line)) {
       const nums = line.match(/[\d,]{4,}/g) || [];
@@ -21,6 +22,7 @@ function parseContractText(text: string) {
     }
   }
 
+  // Fallback: any large number in the text
   if (candidates.length === 0) {
     const allNums = full.match(/[\d,]{5,}/g) || [];
     for (const n of allNums) {
@@ -46,11 +48,16 @@ function parseContractText(text: string) {
   const collects: { commodity: string; location: string; scu: number }[] = [];
   const delivers: { commodity: string; location: string; scu: number }[] = [];
 
+  // Collect lines
   for (const line of lines) {
     const collect = line.match(/Collect\s+(\w+)\s+from\s+(.+?)(?:\.|$)/i);
     if (collect) {
       collects.push({ commodity: collect[1], location: collect[2].trim(), scu: 0 });
     }
+  }
+
+  // Deliver lines (strict)
+  for (const line of lines) {
     const deliver = line.match(/Deliver\s+([\d.]+)\/?([\d.]+)?\s*SCU\s+of\s+(\w+)\s+to\s+(.+?)(?:\.|$)/i);
     if (deliver) {
       const scu = parseFloat(deliver[2] || deliver[1]);
@@ -59,6 +66,28 @@ function parseContractText(text: string) {
         location: deliver[4].trim(),
         scu,
       });
+    }
+  }
+
+  // Fallback: look for "to <location>" near commodity or "freight elevator at <location>"
+  if (delivers.length === 0) {
+    const toMatch = full.match(/(?:to|at)\s+(Sakura Sun [^.,]{5,40}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,4}\s+(?:Workcenter|Station|Hub|Depot|Center|Point|Harbor))/i);
+    if (toMatch) {
+      const loc = toMatch[1].trim();
+      const commodity = collects[0]?.commodity || "Cargo";
+      // Try to find SCU near the text
+      const scuMatch = full.match(/(\d+)\s*SCU/i);
+      const scu = scuMatch ? parseInt(scuMatch[1], 10) : 0;
+      delivers.push({ commodity, location: loc, scu });
+    }
+  }
+
+  // Another fallback: "delivering it to ... at <location>"
+  if (delivers.length === 0) {
+    const delivMatch = full.match(/delivering\s+it\s+to\s+.+?at\s+([A-Z][^.,]{5,40})/i);
+    if (delivMatch) {
+      const commodity = collects[0]?.commodity || "Cargo";
+      delivers.push({ commodity, location: delivMatch[1].trim(), scu: 0 });
     }
   }
 
@@ -116,18 +145,18 @@ export function MissionOCR() {
       const result = parseContractText(text);
       setParsed(result);
 
-      if (result.reward && result.totalScu && result.pickup && result.dropoff) {
+      if (result.reward && result.pickup && result.dropoff) {
         addMission({
           pickup: result.pickup.slice(0, 80),
           dropoff: result.dropoff.slice(0, 80),
           reward: result.reward,
-          scu: result.totalScu,
+          scu: result.totalScu || 0,
           corporation: "Covalex",
           legs: result.legs.length > 0 ? result.legs : undefined,
           maxContainerSize: result.maxContainerSize,
         });
         const sizeNote = result.maxContainerSize ? ` · ${result.maxContainerSize} SCU boxes` : "";
-        setStatus(`Added: ${result.totalScu} SCU · ${result.reward.toLocaleString()} aUEC${result.legs.length > 2 ? ` · ${result.legs.length} legs` : ""}${sizeNote}`);
+        setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC${result.legs.length > 2 ? ` · ${result.legs.length} legs` : ""}${sizeNote}`);
       } else {
         setStatus("Partial data found — review below and add manually if needed");
       }
