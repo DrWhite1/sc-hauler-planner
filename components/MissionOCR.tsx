@@ -3,119 +3,112 @@
 import { useState, useCallback, useEffect } from "react";
 import { createWorker } from "tesseract.js";
 import { useHaulerStore, type Leg } from "@/lib/store";
+import { LOCATIONS } from "@/lib/locations";
+
+const KNOWN_COMMODITIES = ["Quartz", "Waste", "Scrap", "Hydrogen", "Agricium", "Laranite", "Beryl", "Diamond", "Gold", "Copper", "Iron", "Titanium", "Tungsten", "Medical", "Food", "Stims"];
+
+function findLocationInText(text: string): string | null {
+  const lower = text.toLowerCase();
+  for (const loc of LOCATIONS) {
+    const name = loc.name.toLowerCase();
+    if (lower.includes(name)) return loc.name;
+    // Fuzzy: check if most words match
+    const words = name.split(/\s+/).filter((w) => w.length > 3);
+    if (words.length > 0 && words.every((w) => lower.includes(w))) return loc.name;
+  }
+  // Special cases for common OCR errors
+  if (/sakura\s*sun/i.test(text)) return "Sakura Sun Goldenrod Workcenter";
+  if (/goldenrod/i.test(text)) return "Sakura Sun Goldenrod Workcenter";
+  if (/port\s*tress/i.test(text) || /tressler/i.test(text)) return "Port Tressler";
+  if (/everus/i.test(text)) return "Everus Harbor";
+  if (/seraphim/i.test(text)) return "Seraphim Station";
+  if (/baijini/i.test(text)) return "Baijini Point";
+  return null;
+}
 
 function parseContractText(text: string) {
   const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const full = text.replace(/\s+/g, " ");
 
+  // Reward
   let reward = 0;
-  const candidates: number[] = [];
-
-  // Reward near "Reward" or "aUEC"
-  for (const line of lines) {
-    if (/reward|auec|aec/i.test(line)) {
-      const nums = line.match(/[\d,]{4,}/g) || [];
-      for (const n of nums) {
-        const v = parseInt(n.replace(/,/g, ""), 10);
-        if (v >= 10000) candidates.push(v);
+  const rewardMatch = full.match(/reward[^\d]*([\d,]{4,})/i);
+  if (rewardMatch) {
+    const v = parseInt(rewardMatch[1].replace(/,/g, ""), 10);
+    if (v >= 10000) reward = v;
+  }
+  if (!reward) {
+    const nums = full.match(/[\d,]{5,}/g) || [];
+    for (const n of nums) {
+      const v = parseInt(n.replace(/,/g, ""), 10);
+      if (v >= 20000 && v < 500000) {
+        reward = Math.max(reward, v);
       }
     }
   }
 
-  // Fallback: any large number in the text
-  if (candidates.length === 0) {
-    const allNums = full.match(/[\d,]{5,}/g) || [];
-    for (const n of allNums) {
-      const v = parseInt(n.replace(/,/g, ""), 10);
-      if (v >= 20000 && v < 500000) candidates.push(v);
+  // SCU from "0/6 SCU" or "6 SCU"
+  let totalScu = 0;
+  const scuMatch = full.match(/(\d+)\/(\d+)\s*SCU/i) || full.match(/(\d+)\s*SCU/i);
+  if (scuMatch) {
+    totalScu = parseInt(scuMatch[2] || scuMatch[1], 10);
+  }
+
+  // Commodity
+  let commodity = "Cargo";
+  for (const c of KNOWN_COMMODITIES) {
+    if (full.toLowerCase().includes(c.toLowerCase())) {
+      commodity = c;
+      break;
     }
   }
 
-  if (candidates.length > 0) {
-    reward = Math.max(...candidates);
+  // Locations
+  const pickupLoc = findLocationInText(full);
+  let dropoffLoc: string | null = null;
+
+  // Look for delivery location specifically
+  const deliverLine = full.match(/deliver[^.]{0,80}/i);
+  if (deliverLine) {
+    dropoffLoc = findLocationInText(deliverLine[0]);
+  }
+  if (!dropoffLoc) {
+    dropoffLoc = findLocationInText(full);
+    if (dropoffLoc === pickupLoc) dropoffLoc = null;
   }
 
-  let maxContainerSize = 0;
-  const containerMatch =
-    full.match(/(\d+)\s*SCU\s+or\s+smaller/i) ||
-    full.match(/containers?\s+(?:of\s+)?(\d+)\s*SCU/i) ||
-    full.match(/at\s+most\s+(?:the\s+)?containers?\s+will\s+be\s+(\d+)\s*SCU/i) ||
-    full.match(/(\d+)\s*SCU\s+in\s+size/i);
-  if (containerMatch) {
-    maxContainerSize = parseInt(containerMatch[1], 10);
+  // If we found one location, try to find another
+  if (pickupLoc && !dropoffLoc) {
+    const afterPickup = full.split(new RegExp(pickupLoc, "i"))[1] || "";
+    dropoffLoc = findLocationInText(afterPickup);
   }
 
   const collects: { commodity: string; location: string; scu: number }[] = [];
   const delivers: { commodity: string; location: string; scu: number }[] = [];
 
-  // Collect lines
-  for (const line of lines) {
-    const collect = line.match(/Collect\s+(\w+)\s+from\s+(.+?)(?:\.|$)/i);
-    if (collect) {
-      collects.push({ commodity: collect[1], location: collect[2].trim(), scu: 0 });
-    }
+  if (pickupLoc) {
+    collects.push({ commodity, location: pickupLoc, scu: totalScu });
+  }
+  if (dropoffLoc) {
+    delivers.push({ commodity, location: dropoffLoc, scu: totalScu });
   }
 
-  // Deliver lines (strict)
-  for (const line of lines) {
-    const deliver = line.match(/Deliver\s+([\d.]+)\/?([\d.]+)?\s*SCU\s+of\s+(\w+)\s+to\s+(.+?)(?:\.|$)/i);
-    if (deliver) {
-      const scu = parseFloat(deliver[2] || deliver[1]);
-      delivers.push({
-        commodity: deliver[3],
-        location: deliver[4].trim(),
-        scu,
-      });
-    }
-  }
-
-  // Fallback: look for "to <location>" near commodity or "freight elevator at <location>"
-  if (delivers.length === 0) {
-    const toMatch = full.match(/(?:to|at)\s+(Sakura Sun [^.,]{5,40}|[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,4}\s+(?:Workcenter|Station|Hub|Depot|Center|Point|Harbor))/i);
-    if (toMatch) {
-      const loc = toMatch[1].trim();
-      const commodity = collects[0]?.commodity || "Cargo";
-      // Try to find SCU near the text
-      const scuMatch = full.match(/(\d+)\s*SCU/i);
-      const scu = scuMatch ? parseInt(scuMatch[1], 10) : 0;
-      delivers.push({ commodity, location: loc, scu });
-    }
-  }
-
-  // Another fallback: "delivering it to ... at <location>"
-  if (delivers.length === 0) {
-    const delivMatch = full.match(/delivering\s+it\s+to\s+.+?at\s+([A-Z][^.,]{5,40})/i);
-    if (delivMatch) {
-      const commodity = collects[0]?.commodity || "Cargo";
-      delivers.push({ commodity, location: delivMatch[1].trim(), scu: 0 });
-    }
-  }
-
-  const totalScu = delivers.reduce((s, d) => s + d.scu, 0) || 0;
-
-  const pickupLocs = [...new Set(collects.map((c) => c.location))];
-  const dropoffLocs = [...new Set(delivers.map((d) => d.location))];
-
-  const pickup = pickupLocs.length ? pickupLocs.slice(0, 2).join(" + ") : "";
-  const dropoff = dropoffLocs.length ? dropoffLocs.join(" + ") : "";
+  const pickup = pickupLoc || "";
+  const dropoff = dropoffLoc || "";
 
   const legs: Leg[] = [];
-  for (const c of collects) {
-    legs.push({ type: "pickup", location: c.location, scu: c.scu || Math.round(totalScu / Math.max(1, collects.length)), commodity: c.commodity });
-  }
-  for (const d of delivers) {
-    legs.push({ type: "dropoff", location: d.location, scu: d.scu, commodity: d.commodity });
-  }
+  if (pickupLoc) legs.push({ type: "pickup", location: pickupLoc, scu: totalScu, commodity });
+  if (dropoffLoc) legs.push({ type: "dropoff", location: dropoffLoc, scu: totalScu, commodity });
 
   return {
     reward,
-    totalScu: Math.round(totalScu),
+    totalScu,
     pickup,
     dropoff,
     collects,
     delivers,
     legs,
-    maxContainerSize: maxContainerSize || undefined,
+    maxContainerSize: undefined,
     lines,
   };
 }
@@ -155,8 +148,7 @@ export function MissionOCR() {
           legs: result.legs.length > 0 ? result.legs : undefined,
           maxContainerSize: result.maxContainerSize,
         });
-        const sizeNote = result.maxContainerSize ? ` · ${result.maxContainerSize} SCU boxes` : "";
-        setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC${result.legs.length > 2 ? ` · ${result.legs.length} legs` : ""}${sizeNote}`);
+        setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC`);
       } else {
         setStatus("Partial data found — review below and add manually if needed");
       }
@@ -238,9 +230,6 @@ export function MissionOCR() {
               Deliver {d.scu} SCU {d.commodity} to {d.location}
             </div>
           ))}
-          {parsed.maxContainerSize && (
-            <div className="text-gold">Max container: {parsed.maxContainerSize} SCU</div>
-          )}
         </div>
       )}
 
