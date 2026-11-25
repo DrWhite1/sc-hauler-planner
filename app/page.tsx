@@ -19,12 +19,9 @@ function remainingMinutes(m: Mission): number | null {
   return Math.max(0, Math.round(m.availableMinutes - elapsed));
 }
 
-type Tab = "route" | "packing" | "grid";
-
 export default function Home() {
   const { missions, selectedShip, currentLocation, clearMissions, updateMission, removeMission, completedStops } = useHaulerStore();
   const [editing, setEditing] = useState<Mission | null>(null);
-  const [tab, setTab] = useState<Tab>("route");
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -74,7 +71,6 @@ export default function Home() {
       </header>
 
       <div className="grid gap-4 lg:grid-cols-12">
-        {/* Left sidebar */}
         <div className="lg:col-span-3 space-y-3">
           <ShipSelector />
           <LocationSelector />
@@ -90,9 +86,7 @@ export default function Home() {
           </details>
         </div>
 
-        {/* Main */}
         <div className="lg:col-span-9 space-y-3">
-          {/* Missions */}
           <div className="panel p-3">
             <div className="flex items-center justify-between mb-2">
               <h2 className="text-xs font-medium uppercase tracking-wider text-accent/50">
@@ -150,32 +144,15 @@ export default function Home() {
             </div>
           )}
 
-          {/* Tabs for Route / Packing / Grid */}
-          <div className="panel">
-            <div className="flex border-b border-elevated/60">
-              {(["route", "packing", "grid"] as Tab[]).map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setTab(t)}
-                  className={`px-4 py-2 text-xs uppercase tracking-wider transition ${
-                    tab === t
-                      ? "text-gold border-b-2 border-gold"
-                      : "text-accent/40 hover:text-accent/70"
-                  }`}
-                >
-                  {t === "route" ? "Route" : t === "packing" ? "Packing" : "Grid"}
-                </button>
-              ))}
+          {/* Route next to Packing + Grid */}
+          <div className="grid gap-3 lg:grid-cols-5">
+            <div className="lg:col-span-3 space-y-3">
+              <RouteView />
+              <RouteMap />
             </div>
-            <div className="p-3">
-              {tab === "route" && (
-                <>
-                  <RouteView />
-                  <RouteMap />
-                </>
-              )}
-              {tab === "packing" && <PackingView />}
-              {tab === "grid" && <CargoGrid />}
+            <div className="lg:col-span-2 space-y-3">
+              <PackingView />
+              <CargoGrid />
             </div>
           </div>
         </div>
