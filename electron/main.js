@@ -6,6 +6,9 @@ const isDev = process.env.NODE_ENV === "development";
 app.commandLine.appendSwitch("enable-features", "SpeechRecognition");
 app.commandLine.appendSwitch("enable-speech-input");
 
+const CHROME_UA =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+
 function createWindow() {
   const win = new BrowserWindow({
     width: 1400,
@@ -20,6 +23,8 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
+
+  win.webContents.setUserAgent(CHROME_UA);
 
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === "media" || permission === "microphone");
