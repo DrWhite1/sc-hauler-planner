@@ -90,8 +90,11 @@ export function VoicePanel() {
   const toggle = () => (listeningRef.current ? stop() : start());
 
   const testKey = () => {
-    window.electronAPI?.sendKey("t");
-    setStatusMsg("Sent test key T");
+    setStatusMsg("Switch to Notepad now - sending T in 2s...");
+    setTimeout(() => {
+      window.electronAPI?.sendKey("t");
+      setStatusMsg("Sent T");
+    }, 2000);
   };
 
   const add = () => {
@@ -150,7 +153,7 @@ export function VoicePanel() {
       )}
 
       <button onClick={testKey} className="text-[10px] mb-2 text-accent/50 hover:text-accent underline">
-        Test key send (T)
+        Test key send (T) - 2s delay
       </button>
 
       <ul className="space-y-1 text-xs mb-2 max-h-28 overflow-auto">
