@@ -34,17 +34,19 @@ public class GameInput {
 "@
 
 $scan = [GameInput]::MapVirtualKey($vk, 0)
+$size = [System.Runtime.InteropServices.Marshal]::SizeOf([type][GameInput+INPUT])
 
 $down = New-Object GameInput+INPUT
 $down.type = 1
 $down.U.ki.wScan = $scan
-$down.U.ki.dwFlags = 0x0008  # KEYEVENTF_SCANCODE
+$down.U.ki.dwFlags = 0x0008
 
 $up = New-Object GameInput+INPUT
 $up.type = 1
 $up.U.ki.wScan = $scan
-$up.U.ki.dwFlags = 0x0008 -bor 0x0002  # SCANCODE + KEYUP
+$up.U.ki.dwFlags = 0x0008 -bor 0x0002
 
-$size = [System.Runtime.InteropServices.Marshal]::SizeOf([type][GameInput+INPUT])
-$result = [GameInput]::SendInput(2, @($down, $up), $size)
+[GameInput]::SendInput(1, @($down), $size) | Out-Null
+Start-Sleep -Milliseconds 60
+$result = [GameInput]::SendInput(1, @($up), $size)
 Write-Output "sent $result scan $scan"
