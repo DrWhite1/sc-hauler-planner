@@ -1,0 +1,18 @@
+export const LOCATIONS = [
+  "Everus Harbor",
+  "Port Tressler",
+  "Seraphim Station",
+  "MIC-L1 Shallow Frontier",
+  "CRU-L5 Beautiful Glen",
+  "CRU-L4 Shallow Fields",
+  "Baijini Point",
+  "Port Olisar",
+  "Lorville",
+  "Area18",
+  "New Babbage",
+  "Orison",
+  "Grim HEX",
+  "Levski",
+  "Nyx Gateway",
+  "Pyro Gateway",
+];
