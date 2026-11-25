@@ -3,12 +3,41 @@
 @tailwind utilities;
 
 :root {
-  --background: #08090b;
-  --foreground: #c5cbd3;
+  --background: #07080a;
+  --foreground: #d0d5dc;
 }
 
 body {
-  background: var(--background);
+  background: radial-gradient(ellipse 80% 50% at 50% -10%, #12151a 0%, #07080a 50%);
   color: var(--foreground);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: "Inter", system-ui, -apple-system, sans-serif;
+  letter-spacing: -0.01em;
+}
+
+/* Subtle scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #2a3038;
+  border-radius: 3px;
+}
+
+/* Panel base */
+.panel {
+  background: linear-gradient(180deg, rgba(18, 21, 26, 0.8) 0%, rgba(12, 14, 18, 0.6) 100%);
+  border: 1px solid rgba(42, 48, 56, 0.6);
+  border-radius: 10px;
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 4px 24px rgba(0, 0, 0, 0.25);
+}
+
+.stat {
+  background: rgba(8, 9, 11, 0.5);
+  border: 1px solid rgba(42, 48, 56, 0.4);
+  border-radius: 8px;
+  padding: 10px 12px;
 }
