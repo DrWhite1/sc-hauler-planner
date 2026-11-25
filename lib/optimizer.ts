@@ -17,6 +17,24 @@ export type PlannedRoute = {
   distanceScore: number;
 };
 
+// Simple seeded PRNG so the same inputs always produce the same route
+function mulberry32(seed: number) {
+  return function () {
+    let t = (seed += 0x6d2b79f5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashString(str: string): number {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(31, h) + str.charCodeAt(i) | 0;
+  }
+  return h >>> 0;
+}
+
 function getLegs(mission: Mission): Leg[] {
   if (mission.legs && mission.legs.length > 0) return mission.legs;
   return [
@@ -43,7 +61,6 @@ function locationSimilarity(a: string, b: string): number {
   const bl = b.toLowerCase();
   if (al === bl) return 100;
   if (al.includes(bl) || bl.includes(al)) return 60;
-  // Shared tokens (e.g. "Station", planet names)
   const aTokens = al.split(/\s+/);
   const bTokens = bl.split(/\s+/);
   const shared = aTokens.filter((t) => bTokens.includes(t) && t.length > 3).length;
@@ -56,7 +73,6 @@ function scoreRoute(stops: Stop[], totalReward: number, startLocation: string): 
   const uniqueLocs = new Set(stops.map((s) => s.location)).size;
   const backtrackPenalty = (stops.length - uniqueLocs) * 15;
 
-  // Bonus if first stop is close to current location
   let startBonus = 0;
   if (startLocation && stops.length > 0) {
     startBonus = locationSimilarity(stops[0].location, startLocation) * 2;
@@ -68,11 +84,11 @@ function scoreRoute(stops: Stop[], totalReward: number, startLocation: string): 
   return auecPerHour - backtrackPenalty + startBonus;
 }
 
-function mutate(stops: Stop[]): Stop[] {
+function mutate(stops: Stop[], rand: () => number): Stop[] {
   const next = [...stops];
   if (next.length < 2) return next;
-  const i = Math.floor(Math.random() * next.length);
-  const j = Math.floor(Math.random() * next.length);
+  const i = Math.floor(rand() * next.length);
+  const j = Math.floor(rand() * next.length);
   [next[i], next[j]] = [next[j], next[i]];
   return next;
 }
@@ -102,12 +118,16 @@ export function planRoute(
     return { stops: [], totalReward, totalScu, auecPerHour: 0, distanceScore: 0 };
   }
 
+  // Seed from mission IDs + start location so the result is stable
+  const seedKey = missions.map((m) => m.id).join("|") + "|" + currentLocation;
+  const rand = mulberry32(hashString(seedKey));
+
   const populationSize = 40;
   const generations = 30;
   let population: Stop[][] = [];
 
   for (let i = 0; i < populationSize; i++) {
-    population.push([...baseStops].sort(() => Math.random() - 0.5));
+    population.push([...baseStops].sort(() => rand() - 0.5));
   }
 
   let best = population[0];
@@ -126,8 +146,8 @@ export function planRoute(
     const survivors = scored.slice(0, Math.floor(populationSize / 2)).map((s) => s.route);
     const next: Stop[][] = [...survivors];
     while (next.length < populationSize) {
-      const parent = survivors[Math.floor(Math.random() * survivors.length)];
-      next.push(mutate(parent));
+      const parent = survivors[Math.floor(rand() * survivors.length)];
+      next.push(mutate(parent, rand));
     }
     population = next;
   }
