@@ -18,13 +18,15 @@ export type Mission = {
   corporation?: string;
   rank?: string;
   legs?: Leg[];
+  availableMinutes?: number; // remaining time when added
+  addedAt?: number; // timestamp
 };
 
 type State = {
   selectedShip: Ship | null;
   currentLocation: string;
   missions: Mission[];
-  completedStops: string[]; // keys like "missionId:type:location"
+  completedStops: string[];
   setShip: (ship: Ship | null) => void;
   setCurrentLocation: (loc: string) => void;
   addMission: (mission: Omit<Mission, "id">) => void;
@@ -52,7 +54,7 @@ export const useHaulerStore = create<State>()(
         set((state) => ({
           missions: [
             ...state.missions,
-            { ...mission, id: generateId() },
+            { ...mission, id: generateId(), addedAt: Date.now() },
           ],
         })),
       updateMission: (id, updates) =>
