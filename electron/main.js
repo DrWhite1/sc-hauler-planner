@@ -1,5 +1,6 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
+const { exec } = require("child_process");
 const isDev = process.env.NODE_ENV === "development";
 
 function createWindow() {
@@ -13,6 +14,7 @@ function createWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, "preload.js"),
     },
   });
 
@@ -23,6 +25,19 @@ function createWindow() {
     win.loadFile(path.join(__dirname, "../out/index.html"));
   }
 }
+
+function sendKey(key) {
+  const k = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+  if (!k) return;
+  if (process.platform === "win32") {
+    const ps = `powershell -NoProfile -Command "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${k}')"`;
+    exec(ps);
+  } else {
+    exec(`xdotool key ${k}`);
+  }
+}
+
+ipcMain.on("send-key", (_e, key) => sendKey(key));
 
 app.whenReady().then(createWindow);
 
