@@ -37,73 +37,46 @@ function createWindow() {
   }
 }
 
-function getAhkPath() {
-  return path.join(app.getPath("userData"), "AutoHotkey64.exe");
+function findAhk() {
+  const candidates = [
+    path.join(app.getPath("userData"), "AutoHotkey64.exe"),
+    "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe",
+    "C:\\Program Files\\AutoHotkey\\AutoHotkey.exe",
+    "C:\\Program Files (x86)\\AutoHotkey\\AutoHotkey.exe",
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
 }
 
-function ensureAhk() {
-  return new Promise((resolve, reject) => {
-    const dest = getAhkPath();
-    if (fs.existsSync(dest)) return resolve(dest);
-
-    const url = "https://github.com/AutoHotkey/AutoHotkey/releases/download/v2.0.19/AutoHotkey_2.0.19_setup.exe";
-    // Portable: download the zip and extract, or use a known portable build
-    // For simplicity, download a portable exe if available, else instruct
-    const portableUrl = "https://www.autohotkey.com/download/ahk.zip";
-    const zipPath = path.join(app.getPath("userData"), "ahk.zip");
-
-    const file = fs.createWriteStream(zipPath);
-    https.get(portableUrl, (res) => {
-      if (res.statusCode !== 200) {
-        reject(new Error("Could not download AutoHotkey"));
-        return;
-      }
-      res.pipe(file);
-      file.on("finish", () => {
-        file.close();
-        const extractCmd = `powershell -NoProfile -Command "Expand-Archive -Path '${zipPath}' -DestinationPath '${app.getPath("userData")}' -Force"`;
-        exec(extractCmd, (err) => {
-          if (err) reject(err);
-          else {
-            // The zip contains AutoHotkey.exe or similar; rename if needed
-            const extracted = path.join(app.getPath("userData"), "AutoHotkey.exe");
-            if (fs.existsSync(extracted)) {
-              fs.renameSync(extracted, dest);
-            }
-            resolve(dest);
-          }
-        });
-      });
-    }).on("error", reject);
-  });
-}
-
-async function sendKey(key) {
+function sendKey(key) {
   const k = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
   if (!k) return;
 
   if (process.platform !== "win32") {
     exec(`xdotool key ${k}`, (err) => {
-      if (err) console.log("xdotool error (install with: sudo apt install xdotool):", err.message);
+      if (err) console.log("Linux: install xdotool with 'sudo apt install xdotool'");
       else console.log("xdotool sent:", k);
     });
     return;
   }
 
-  try {
-    const ahk = await ensureAhk();
-    const script = `#Requires AutoHotkey v2.0\nSendMode "Input"\nSend "{${k}}"\nExitApp\n`;
-    const tmp = path.join(os.tmpdir(), `sc-key-${Date.now()}.ahk`);
-    fs.writeFileSync(tmp, script);
-
-    exec(`"${ahk}" "${tmp}"`, (err) => {
-      if (err) console.log("ahk error:", err.message);
-      else console.log("ahk sent:", k);
-      try { fs.unlinkSync(tmp); } catch {}
-    });
-  } catch (err) {
-    console.log("AutoHotkey setup failed:", err.message);
+  const ahk = findAhk();
+  if (!ahk) {
+    console.log("AutoHotkey not found. Install v2 from https://www.autohotkey.com/ then restart the app.");
+    return;
   }
+
+  const script = `#Requires AutoHotkey v2.0\nSendMode "Input"\nSend "{${k}}"\nExitApp\n`;
+  const tmp = path.join(os.tmpdir(), `sc-key-${Date.now()}.ahk`);
+  fs.writeFileSync(tmp, script);
+
+  exec(`"${ahk}" "${tmp}"`, (err) => {
+    if (err) console.log("ahk error:", err.message);
+    else console.log("ahk sent:", k);
+    try { fs.unlinkSync(tmp); } catch {}
+  });
 }
 
 ipcMain.on("send-key", (_e, key) => sendKey(key));
