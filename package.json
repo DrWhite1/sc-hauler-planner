@@ -10,7 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "electron:dev": "NODE_ENV=development electron .",
+    "electron:dev": "electron .",
     "electron:build": "next build && electron-builder",
     "dist:win": "next build && electron-builder --win",
     "dist:linux": "next build && electron-builder --linux"
