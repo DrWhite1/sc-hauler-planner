@@ -4,8 +4,11 @@ import { useHaulerStore } from "@/lib/store";
 import { planRoute } from "@/lib/optimizer";
 
 export function RouteView() {
-  const { missions, selectedShip } = useHaulerStore();
-  const route = missions.length > 0 && selectedShip ? planRoute(missions, selectedShip) : null;
+  const { missions, selectedShip, currentLocation } = useHaulerStore();
+  const route =
+    missions.length > 0 && selectedShip
+      ? planRoute(missions, selectedShip, currentLocation)
+      : null;
 
   if (!selectedShip) {
     return (
@@ -25,7 +28,14 @@ export function RouteView() {
 
   return (
     <div className="rounded-lg border border-elevated bg-elevated/50 p-4">
-      <h2 className="text-lg font-semibold mb-4">Optimized Route</h2>
+      <h2 className="text-lg font-semibold mb-4">
+        Optimized Route
+        {currentLocation && (
+          <span className="text-sm font-normal text-accent/50 ml-2">
+            from {currentLocation}
+          </span>
+        )}
+      </h2>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-sm">
         <div>
