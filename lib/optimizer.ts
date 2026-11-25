@@ -1,6 +1,7 @@
 import type { Mission, Leg } from "./store";
 import type { Ship } from "./ships";
 import { travelMinutes } from "./travel";
+import { isValidOrder } from "./routeValidity";
 
 export type Stop = {
   type: "pickup" | "dropoff";
@@ -44,18 +45,6 @@ function getLegs(mission: Mission): Leg[] {
     { type: "pickup", location: mission.pickup, scu: mission.scu },
     { type: "dropoff", location: mission.dropoff, scu: mission.scu },
   ];
-}
-
-function isValidOrder(stops: Stop[]): boolean {
-  for (const s of stops) {
-    if (s.type === "dropoff") {
-      const hasPickup = stops
-        .slice(0, stops.indexOf(s))
-        .some((p) => p.missionId === s.missionId && p.type === "pickup");
-      if (!hasPickup) return false;
-    }
-  }
-  return true;
 }
 
 function normalizeLoc(loc: string): string {
