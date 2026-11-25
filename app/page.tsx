@@ -1,13 +1,21 @@
 "use client";
 
+import { useState } from "react";
 import { ShipSelector } from "@/components/ShipSelector";
 import { MissionForm } from "@/components/MissionForm";
 import { MissionOCR } from "@/components/MissionOCR";
 import { RouteView } from "@/components/RouteView";
-import { useHaulerStore } from "@/lib/store";
+import { useHaulerStore, type Mission } from "@/lib/store";
 
 export default function Home() {
-  const { missions, selectedShip, clearMissions } = useHaulerStore();
+  const { missions, selectedShip, clearMissions, updateMission, removeMission } = useHaulerStore();
+  const [editing, setEditing] = useState<Mission | null>(null);
+
+  const saveEdit = () => {
+    if (!editing) return;
+    updateMission(editing.id, editing);
+    setEditing(null);
+  };
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-6xl">
@@ -45,14 +53,79 @@ export default function Home() {
             ) : (
               <ul className="space-y-2 text-sm">
                 {missions.map((m) => (
-                  <li key={m.id} className="flex justify-between border-b border-ink/50 py-2">
-                    <span>{m.pickup} → {m.dropoff}</span>
-                    <span className="text-gold">{m.reward.toLocaleString()} aUEC · {m.scu} SCU</span>
+                  <li key={m.id} className="border-b border-ink/50 py-2">
+                    <button
+                      onClick={() => setEditing(m)}
+                      className="w-full text-left hover:bg-ink/40 rounded px-1 -mx-1"
+                    >
+                      <div className="flex justify-between">
+                        <span>{m.pickup} → {m.dropoff}</span>
+                        <span className="text-gold">{m.reward.toLocaleString()} aUEC · {m.scu} SCU</span>
+                      </div>
+                      {m.legs && m.legs.length > 2 && (
+                        <div className="text-[10px] text-accent/50 mt-0.5">
+                          {m.legs.length} legs
+                        </div>
+                      )}
+                    </button>
                   </li>
                 ))}
               </ul>
             )}
           </div>
+
+          {editing && (
+            <div className="mt-4 rounded-lg border border-gold/40 bg-elevated/70 p-4 text-sm">
+              <h3 className="font-medium mb-3 text-gold">Edit Mission</h3>
+              <div className="grid grid-cols-2 gap-2 mb-2">
+                <input
+                  value={editing.pickup}
+                  onChange={(e) => setEditing({ ...editing, pickup: e.target.value })}
+                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  placeholder="Pickup"
+                />
+                <input
+                  value={editing.dropoff}
+                  onChange={(e) => setEditing({ ...editing, dropoff: e.target.value })}
+                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  placeholder="Dropoff"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-2 mb-3">
+                <input
+                  type="number"
+                  value={editing.reward}
+                  onChange={(e) => setEditing({ ...editing, reward: Number(e.target.value) })}
+                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  placeholder="Reward"
+                />
+                <input
+                  type="number"
+                  value={editing.scu}
+                  onChange={(e) => setEditing({ ...editing, scu: Number(e.target.value) })}
+                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  placeholder="SCU"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button onClick={saveEdit} className="rounded bg-gold text-ink px-3 py-1 text-sm">
+                  Save
+                </button>
+                <button onClick={() => setEditing(null)} className="rounded border border-elevated px-3 py-1 text-sm">
+                  Cancel
+                </button>
+                <button
+                  onClick={() => {
+                    removeMission(editing.id);
+                    setEditing(null);
+                  }}
+                  className="rounded text-red-400 border border-red-400/40 px-3 py-1 text-sm ml-auto"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          )}
 
           <div className="mt-6">
             <RouteView />
