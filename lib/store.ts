@@ -17,13 +17,15 @@ export type Mission = {
   scu: number;
   corporation?: string;
   rank?: string;
-  legs?: Leg[]; // optional multi-stop legs
+  legs?: Leg[];
 };
 
 type State = {
   selectedShip: Ship | null;
+  currentLocation: string;
   missions: Mission[];
   setShip: (ship: Ship | null) => void;
+  setCurrentLocation: (loc: string) => void;
   addMission: (mission: Omit<Mission, "id">) => void;
   updateMission: (id: string, updates: Partial<Mission>) => void;
   removeMission: (id: string) => void;
@@ -38,8 +40,10 @@ export const useHaulerStore = create<State>()(
   persist(
     (set) => ({
       selectedShip: null,
+      currentLocation: "",
       missions: [],
       setShip: (ship) => set({ selectedShip: ship }),
+      setCurrentLocation: (loc) => set({ currentLocation: loc }),
       addMission: (mission) =>
         set((state) => ({
           missions: [
