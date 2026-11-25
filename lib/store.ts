@@ -27,6 +27,7 @@ export type VoiceCommand = {
   id: string;
   phrase: string;
   key: string;
+  duration?: number;
 };
 
 type State = {
@@ -44,7 +45,7 @@ type State = {
   toggleStop: (key: string) => void;
   clearProgress: () => void;
   setVoiceCommands: (cmds: VoiceCommand[]) => void;
-  addVoiceCommand: (phrase: string, key: string) => void;
+  addVoiceCommand: (phrase: string, key: string, duration?: number) => void;
   removeVoiceCommand: (id: string) => void;
 };
 
@@ -98,9 +99,9 @@ export const useHaulerStore = create<State>()(
         })),
       clearProgress: () => set({ completedStops: [] }),
       setVoiceCommands: (cmds) => set({ voiceCommands: cmds }),
-      addVoiceCommand: (phrase, key) =>
+      addVoiceCommand: (phrase, key, duration) =>
         set((state) => ({
-          voiceCommands: [...state.voiceCommands, { id: generateId(), phrase, key }],
+          voiceCommands: [...state.voiceCommands, { id: generateId(), phrase, key, duration }],
         })),
       removeVoiceCommand: (id) =>
         set((state) => ({
