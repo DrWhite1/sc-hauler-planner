@@ -10,6 +10,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
+    "test": "node tests/parseContract.test.mjs && node tests/routeValidity.test.mjs && node tests/containers.test.mjs && node tests/locations.test.mjs && node tests/cargoGrid.test.mjs && node tests/ocrMultiCollect.test.mjs",
     "electron:dev": "electron .",
     "electron:build": "next build && electron-builder",
     "dist:win": "next build && electron-builder --win",

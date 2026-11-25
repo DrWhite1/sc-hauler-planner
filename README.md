@@ -8,7 +8,10 @@ Star Citizen hauler mission planner with OCR contract reading, route optimizatio
 - Edit SCU per stop on a mission if the OCR misreads a number
 - Multi-stop mission support with running SCU tracking
 - Genetic algorithm route optimizer (capacity, deadlines, current location)
-- Cargo grid visualization with load order
+- Cargo grid visualization with load order: one square per SCU of the selected ship,
+  "Fit to window" (no scrolling, even for a 4,608 SCU Hull C) or "Actual size"
+- Box-size breakdown per stop (32/16/8/4/2/1 SCU) from each mission's max container size
+- External cargo deck (EXT) flags for stations a Hull C can load at
 - Mission progress tracker
 - Voice commands that send keys to the game
 - Desktop app for Windows and Linux
@@ -76,6 +79,7 @@ The AppImage is created in the `dist` folder.
 ```bash
 npm install
 npm run dev
+npm test   # parser, container split, locations and cargo grid tests (plain node >= 22.6)
 ```
 
 In another terminal:

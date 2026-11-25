@@ -13,6 +13,7 @@ import { CargoGrid } from "@/components/CargoGrid";
 import { VoicePanel } from "@/components/VoicePanel";
 import { useHaulerStore, type Mission } from "@/lib/store";
 import { planRoute } from "@/lib/optimizer";
+import { STANDARD_CONTAINERS } from "@/lib/containers";
 
 function remainingMinutes(m: Mission): number | null {
   if (!m.availableMinutes || !m.addedAt) return null;
@@ -132,7 +133,9 @@ export default function Home() {
                       <div className="text-xs truncate">{m.pickup} → {m.dropoff}</div>
                       <div className="flex justify-between mt-1">
                         <span className="text-gold text-xs font-medium">{m.reward.toLocaleString()}</span>
-                        <span className="text-[10px] text-accent/40">{m.scu} SCU</span>
+                        <span className="text-[10px] text-accent/40">
+                          {m.scu} SCU · {m.maxContainerSize ? `max ${m.maxContainerSize}` : "max ?"}
+                        </span>
                       </div>
                       {(left !== null || tooBig) && (
                         <div className="text-[9px] mt-1 text-accent/40">
@@ -154,7 +157,37 @@ export default function Home() {
                 <input value={editing.pickup} onChange={(e) => setEditing({ ...editing, pickup: e.target.value })} className="rounded bg-ink border border-elevated px-2 py-1 text-xs" placeholder="Pickup" />
                 <input value={editing.dropoff} onChange={(e) => setEditing({ ...editing, dropoff: e.target.value })} className="rounded bg-ink border border-elevated px-2 py-1 text-xs" placeholder="Dropoff" />
               </div>
-              {editing.legs && editing.legs.length > 0 ? (
+              <div className="grid grid-cols-3 gap-2 mb-2">
+                <label className="text-[10px] text-accent/50">
+                  Reward (aUEC)
+                  <input type="number" value={editing.reward} onChange={(e) => setEditing({ ...editing, reward: Number(e.target.value) || 0 })} className="mt-0.5 w-full rounded bg-ink border border-elevated px-2 py-1 text-xs text-accent" />
+                </label>
+                <label className="text-[10px] text-accent/50">
+                  SCU
+                  <input
+                    type="number"
+                    value={editing.scu}
+                    onChange={(e) => setEditing({ ...editing, scu: Number(e.target.value) || 0 })}
+                    disabled={!!editing.legs && editing.legs.length > 0}
+                    title={editing.legs && editing.legs.length > 0 ? "Multi-leg mission: SCU comes from the legs" : undefined}
+                    className="mt-0.5 w-full rounded bg-ink border border-elevated px-2 py-1 text-xs text-accent disabled:opacity-50"
+                  />
+                </label>
+                <label className="text-[10px] text-accent/50">
+                  Max container
+                  <select
+                    value={editing.maxContainerSize ?? ""}
+                    onChange={(e) => setEditing({ ...editing, maxContainerSize: e.target.value ? Number(e.target.value) : undefined })}
+                    className="mt-0.5 w-full rounded bg-ink border border-elevated px-2 py-1 text-xs text-accent"
+                  >
+                    <option value="">Unknown (ship max)</option>
+                    {STANDARD_CONTAINERS.map((s) => (
+                      <option key={s} value={s}>{s} SCU</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              {editing.legs && editing.legs.length > 0 && (
                 <div className="mb-2 space-y-1">
                   <div className="text-[10px] text-accent/50">SCU per stop (fix a misread)</div>
                   {editing.legs.map((l, i) => (
@@ -180,17 +213,6 @@ export default function Home() {
                       Pickups total {legTotals(editing).pickup} SCU but deliveries total {legTotals(editing).dropoff}. Fix both sides so the route stays valid.
                     </div>
                   )}
-                </div>
-              ) : (
-                <div className="mb-2 flex items-center gap-2 text-xs">
-                  <span className="text-accent/50">SCU</span>
-                  <input
-                    type="number"
-                    min={0}
-                    value={editing.scu}
-                    onChange={(e) => setEditing({ ...editing, scu: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
-                    className="w-20 rounded bg-ink border border-elevated px-2 py-1 text-xs text-right"
-                  />
                 </div>
               )}
               <div className="flex gap-2">

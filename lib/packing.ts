@@ -1,12 +1,15 @@
 import type { Stop } from "./optimizer";
 import type { Mission } from "./store";
+import { boxBreakdown, resolveMaxContainer, type BoxCount } from "./containers";
 
 export type PackItem = {
   missionId: string;
   location: string;
   scu: number;
   commodity?: string;
-  containerSize: number;
+  containerSize: number; // largest box used for this cargo
+  containerAssumed: boolean; // true if the mission did not state a max container size
+  boxes: BoxCount[]; // e.g. 76 SCU at max 8 -> 9 x 8 + 1 x 4
   loadOrder: number; // 1 = load first (deepest in hold)
   deliverOrder: number; // 1 = deliver first
 };
@@ -29,7 +32,7 @@ export function buildPackingOrder(
   const items: PackItem[] = [];
   for (const p of pickups) {
     const mission = missions.find((m) => m.id === p.missionId);
-    const containerSize = mission?.maxContainerSize || Math.min(maxContainer, 32);
+    const { size: containerSize, assumed } = resolveMaxContainer(mission?.maxContainerSize, maxContainer);
     const deliverOrder = (deliverIndex.get(p.missionId) ?? 999) + 1;
     items.push({
       missionId: p.missionId,
@@ -37,6 +40,8 @@ export function buildPackingOrder(
       scu: p.scu,
       commodity: p.commodity,
       containerSize,
+      containerAssumed: assumed,
+      boxes: boxBreakdown(p.scu, containerSize),
       loadOrder: 0,
       deliverOrder,
     });

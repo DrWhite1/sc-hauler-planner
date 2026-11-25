@@ -6,6 +6,7 @@ export type Leg = {
   location: string;
   scu: number;
   commodity?: string;
+  scuEstimated?: boolean; // amount not stated by the contract (one delivery, several pickups)
 };
 
 // Locations that are not in lib/locations.ts but show up in contracts.
@@ -141,8 +142,62 @@ function lev(a: string, b: string): number {
   return dp[a.length][b.length];
 }
 
+const BOX_SIZES = [1, 2, 4, 8, 16, 24, 32];
+
+// Largest container the contract allows. Contract briefings phrase it as e.g.
+// "a ship that can handle 4 SCU cargo containers", "can hold 2 SCU cargo containers",
+// or "Max container size: 16 SCU". Returns undefined when the text does not say.
+export function parseMaxContainerSize(full: string): number | undefined {
+  const patterns = [
+    /(?:handle|hold|carry|fit|take|accept|accommodate|support)s?\s+(?:up\s+to\s+)?(\d{1,2})\s*SCU\s+(?:cargo\s+)?(?:containers?|boxes|crates)/i,
+    /(?:max(?:imum)?|largest)\.?\s+(?:cargo\s+)?(?:container|box|crate)(?:\s+size)?\s*(?:of|is|:)?\s*(\d{1,2})\s*SCU/i,
+    /(\d{1,2})\s*SCU\s+(?:cargo\s+)?(?:containers?|boxes|crates)\s+(?:max(?:imum)?|or\s+smaller|or\s+less)/i,
+    // "(8 SCU or smaller)", "containers of 8 SCU or smaller", "8 SCU or less"
+    /(\d{1,2})\s*SCU\s*(?:\)|,)?\s*or\s+(?:smaller|less)\b/i,
+    // The briefing wraps "(8 SCU or" / "smaller)" over two lines, and the objectives column is
+    // read in between, so real OCR text puts other words inside the brackets:
+    // "(8 SCU or Collect Carbon from Gaslight. smaller)" (PaddleOCR), "(8 SCU or . Pp smaller)".
+    /\(\s*(\d{1,2})\s*SCU\s+or\b[^()]{0,80}?\b(?:smaller|less)\s*\)/i,
+  ];
+  for (const re of patterns) {
+    const m = full.match(re);
+    if (m) {
+      const v = parseInt(m[1], 10);
+      if (BOX_SIZES.includes(v)) return v;
+    }
+  }
+  return undefined;
+}
+
+// Max container size across several OCR reads of one screenshot: the value most reads agree on.
+// A tie between different values is an unreliable read, so it stays unknown (the planner then
+// falls back to the ship's max container size and marks it as assumed).
+export function voteMaxContainerSize(reads: { maxContainerSize?: number }[]): number | undefined {
+  const votes = new Map<number, number>();
+  for (const r of reads) if (r.maxContainerSize) votes.set(r.maxContainerSize, (votes.get(r.maxContainerSize) ?? 0) + 1);
+  const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
+  if (!ranked.length || (ranked[1] && ranked[1][1] === ranked[0][1])) return undefined;
+  return ranked[0][0];
+}
+
 export type Delivery = { commodity: string; location: string; scu: number; locationRaw?: string };
-export type Collection = { commodity: string; location: string; scu: number; locationRaw?: string };
+export type Collection = {
+  commodity: string;
+  location: string;
+  scu: number;
+  locationRaw?: string;
+  // true when several pickups feed one delivery: the contract only states the delivered total,
+  // so the amount per pickup is an even split of it (same convention as the pre-parser app).
+  scuEstimated?: boolean;
+};
+
+// Split a delivered total over n pickups as evenly as possible; the parts always add up.
+export function evenSplit(total: number, n: number): number[] {
+  if (n <= 0) return [];
+  const base = Math.floor(total / n);
+  const extra = total - base * n;
+  return Array.from({ length: n }, (_, i) => base + (i < extra ? 1 : 0));
+}
 
 function finalize(
   base: {
@@ -152,6 +207,7 @@ function finalize(
     suggestedPickup: string | null;
     expectedDelivers?: number;
     expectedCollects?: number;
+    maxContainerSize?: number;
   },
   delivers: Delivery[],
   collects: Collection[],
@@ -165,6 +221,7 @@ function finalize(
     (d, c) => d.includes(c) || c.includes(d),
     (d, c) => Math.min(d.length, c.length) >= 5 && lev(d, c) <= 2,
   ];
+  const collectFor = new Map<number, number>(); // collect index -> delivery index
   for (const same of passes) {
     collects.forEach((c, ci) => {
       if (pairedCollect.has(ci)) return;
@@ -172,9 +229,43 @@ function finalize(
       if (di !== -1) {
         used.add(di);
         pairedCollect.add(ci);
+        collectFor.set(ci, di);
         c.scu = delivers[di].scu;
       }
     });
+  }
+  // One delivery can be fed by several pickups ("Deliver 0/129 SCU of Carbon to Ruin Station",
+  // then "Collect Carbon from" three places). Extra collects of a commodity whose deliveries are
+  // all paired belong to that delivery; they are not orphans.
+  for (const same of passes) {
+    collects.forEach((c, ci) => {
+      if (pairedCollect.has(ci)) return;
+      const di = delivers.findIndex((d, i) => used.has(i) && same(d.commodity, c.commodity));
+      if (di !== -1) {
+        pairedCollect.add(ci);
+        collectFor.set(ci, di);
+      }
+    });
+  }
+  // The contract states only the delivered total, so split it evenly over its pickups.
+  const byDelivery = new Map<number, number[]>();
+  for (const [ci, di] of collectFor) byDelivery.set(di, [...(byDelivery.get(di) ?? []), ci]);
+  for (const [di, cis] of byDelivery) {
+    if (cis.length < 2) continue;
+    cis.sort((a, b) => a - b);
+    const parts = evenSplit(delivers[di].scu, cis.length);
+    cis.forEach((ci, k) => {
+      collects[ci].scu = parts[k];
+      collects[ci].scuEstimated = true;
+    });
+  }
+  const notes: string[] = [];
+  for (const [di, cis] of byDelivery) {
+    if (cis.length > 1) {
+      notes.push(
+        `${delivers[di].commodity}: ${delivers[di].scu} SCU from ${cis.length} pickups, amount per pickup not stated, split evenly`
+      );
+    }
   }
 
   const missingPickups = delivers.filter((_, i) => !used.has(i)).map((d) => d.commodity);
@@ -213,7 +304,15 @@ function finalize(
   const dropoff = uniq(delivers.map((d) => d.location)).slice(0, 4).join(" + ");
 
   const legs: Leg[] = [];
-  for (const c of collects) if (c.location) legs.push({ type: "pickup", location: c.location, scu: c.scu, commodity: c.commodity });
+  for (const c of collects)
+    if (c.location)
+      legs.push({
+        type: "pickup",
+        location: c.location,
+        scu: c.scu,
+        commodity: c.commodity,
+        ...(c.scuEstimated ? { scuEstimated: true } : {}),
+      });
   for (const d of delivers) if (d.location) legs.push({ type: "dropoff", location: d.location, scu: d.scu, commodity: d.commodity });
 
   return {
@@ -229,18 +328,63 @@ function finalize(
     orphanCollects,
     unknownLocations,
     warnings,
+    notes,
     suggestedPickup: base.suggestedPickup,
     expectedDelivers: base.expectedDelivers ?? 0,
     suggestedUsed,
     complete,
-    maxContainerSize: undefined as number | undefined,
+    maxContainerSize: base.maxContainerSize as number | undefined,
     lines: base.lines,
   };
 }
 
 export type ParsedContract = ReturnType<typeof finalize>;
 
-export function parseContractText(rawText: string, knownLocations: string[] = []): ParsedContract {
+// Some names exist in more than one system: a contract in Pyro says just "Stanton Gateway",
+// which is "Stanton Gateway (Pyro)", not "Stanton Gateway (Nyx)"; "Nyx Gateway" is the Stanton
+// one in Stanton but "Nyx Gateway (Pyro)" in Pyro. Resolve such a name from the system of the
+// contract's other locations. With no or mixed context the name is left as read.
+const SYSTEM_SUFFIX = /\s*\(([^)]+)\)\s*$/;
+export function resolveAmbiguousNames(
+  names: string[],
+  knownLocations: string[],
+  systemOf: (name: string) => string | undefined
+): string[] {
+  const base = (n: string) => n.replace(SYSTEM_SUFFIX, "").trim().toLowerCase();
+  const candidatesFor = (name: string) => {
+    const b = base(name);
+    // Only a bare name is ambiguous; "Stanton Gateway (Nyx)" already says where it is.
+    if (!name || SYSTEM_SUFFIX.test(name)) return [];
+    const c = knownLocations.filter((k) => base(k) === b);
+    return c.length > 1 || (c.length === 1 && c[0] !== name) ? c : [];
+  };
+  const context = new Set<string>();
+  for (const n of names) {
+    if (!n || candidatesFor(n).length) continue;
+    const sys = systemOf(n);
+    if (sys) context.add(sys);
+  }
+  if (context.size !== 1) return names;
+  const [system] = [...context];
+  return names.map((n) => {
+    const c = candidatesFor(n);
+    if (!c.length) return n;
+    const inSystem = c.filter((k) => systemOf(k) === system);
+    return inSystem.length === 1 ? inSystem[0] : n;
+  });
+}
+
+export type ParseOptions = {
+  // System of a known location ("Stanton", "Pyro", "Nyx"), used to resolve names that exist in
+  // several systems. Without it such names are kept as read.
+  systemOf?: (name: string) => string | undefined;
+};
+
+export function parseContractText(
+  rawText: string,
+  knownLocations: string[] = [],
+  opts: ParseOptions = {}
+): ParsedContract {
   const text = cleanOcr(rawText);
   const full = text.replace(/\s+/g, " ");
 
@@ -309,10 +453,33 @@ export function parseContractText(rawText: string, knownLocations: string[] = []
     collects.push({ commodity: d.commodity, location: loc.name, scu: 0, locationRaw: loc.raw });
   }
 
+  if (opts.systemOf) {
+    const all = [...delivers, ...collects];
+    const resolved = resolveAmbiguousNames(
+      all.map((x) => x.location),
+      knownLocations,
+      opts.systemOf
+    );
+    all.forEach((x, i) => (x.location = resolved[i]));
+    if (suggestedPickup) {
+      suggestedPickup =
+        resolveAmbiguousNames([...all.map((x) => x.location), suggestedPickup], knownLocations, opts.systemOf).pop() ??
+        suggestedPickup;
+    }
+  }
+
   const expectedDelivers = (full.match(/\bdeliver\s*[0-9OoIl]+\s*\/\s*[0-9OoIl]+/gi) ?? []).length;
   const expectedCollects = (text.match(/(?:^|\n)[^A-Za-z0-9\n]*collect\b/gi) ?? []).length;
   return finalize(
-    { reward, corporation, lines: text.split(/\n+/), suggestedPickup, expectedDelivers, expectedCollects },
+    {
+      reward,
+      corporation,
+      lines: text.split(/\n+/),
+      suggestedPickup,
+      expectedDelivers,
+      expectedCollects,
+      maxContainerSize: parseMaxContainerSize(full),
+    },
     delivers,
     collects
   );
@@ -322,14 +489,21 @@ export function parseContractText(rawText: string, knownLocations: string[] = []
 // let the user accept that location for every delivery that has no pickup. Never automatic.
 export function applySuggestedPickups(r: ParsedContract): ParsedContract {
   if (!r.suggestedPickup || r.missingPickups.length === 0) return r;
-  const collects = r.collects.map((c) => ({ ...c }));
+  const collects: Collection[] = r.collects.map((c) => ({ ...c, scuEstimated: undefined }));
   for (const commodity of r.missingPickups) {
     const d = r.delivers.find((x) => x.commodity === commodity);
     collects.push({ commodity, location: r.suggestedPickup, scu: d ? d.scu : 0 });
   }
   const delivers = r.delivers.map((d) => ({ ...d }));
   return finalize(
-    { reward: r.reward, corporation: r.corporation, lines: r.lines, suggestedPickup: r.suggestedPickup, expectedDelivers: r.delivers.length },
+    {
+      reward: r.reward,
+      corporation: r.corporation,
+      lines: r.lines,
+      suggestedPickup: r.suggestedPickup,
+      expectedDelivers: r.delivers.length,
+      maxContainerSize: r.maxContainerSize,
+    },
     delivers,
     collects,
     true
@@ -374,8 +548,11 @@ export function pickConsensus(reads: ParsedContract[]): Consensus {
     groups.set(k, [...(groups.get(k) ?? []), r]);
   }
   const best = [...groups.values()].sort((a, b) => b.length - a.length)[0];
-  if (best.length >= 2) return { chosen: best[0], state: "agreed", detail: "" };
-  if (reads.length === 1 && groups.size === 1) return { chosen: best[0], state: "single", detail: "" };
+  // The briefing sentence with the max container size may only be legible in some passes.
+  const withMax = (r: ParsedContract): ParsedContract =>
+    r.maxContainerSize ? r : { ...r, maxContainerSize: voteMaxContainerSize(reads) };
+  if (best.length >= 2) return { chosen: withMax(best[0]), state: "agreed", detail: "" };
+  if (reads.length === 1 && groups.size === 1) return { chosen: withMax(best[0]), state: "single", detail: "" };
   const parts = [...groups.values()].map((g) => g[0].delivers.map((d) => `${d.commodity} ${d.scu}`).join(", "));
   return { chosen: null, state: "conflict", detail: parts.join(" vs ") };
 }
@@ -412,10 +589,13 @@ export function mergeReads(reads: ParsedContract[]): Merged {
   const cluster = (c: string) =>
     reps.find((rep) => rep === c || (Math.min(rep.length, c.length) >= 5 && lev(rep, c) <= 2)) ?? c;
 
-  type Acc = { dN: number; cN: number; scu: Vote; dLoc: Vote; cLoc: Vote };
+  // cLoc counts each pickup place once per read; cCount votes on how many pickups a read saw
+  // for the commodity, so a delivery fed from several places keeps all of them.
+  type Acc = { dN: number; cN: number; scu: Vote; dLoc: Vote; cLoc: Vote; cCount: Vote; cOrder: string[] };
   const acc = new Map<string, Acc>();
   const get = (k: string) => {
-    if (!acc.has(k)) acc.set(k, { dN: 0, cN: 0, scu: new Map(), dLoc: new Map(), cLoc: new Map() });
+    if (!acc.has(k))
+      acc.set(k, { dN: 0, cN: 0, scu: new Map(), dLoc: new Map(), cLoc: new Map(), cCount: new Map(), cOrder: [] });
     return acc.get(k)!;
   };
   for (const r of reads) {
@@ -430,13 +610,25 @@ export function mergeReads(reads: ParsedContract[]): Merged {
       bump(a.scu, String(d.scu));
       if (d.location) bump(a.dLoc, d.location);
     }
+    const perCommodity = new Map<string, Set<string>>();
     for (const c of r.collects) {
       const k = cluster(c.commodity);
-      if (seenC.has(k)) continue;
-      seenC.add(k);
+      if (!seenC.has(k)) {
+        seenC.add(k);
+        get(k).cN++;
+      }
+      const set = perCommodity.get(k) ?? new Set<string>();
+      set.add(c.location || `?${set.size}`);
+      perCommodity.set(k, set);
+    }
+    for (const [k, set] of perCommodity) {
       const a = get(k);
-      a.cN++;
-      if (c.location) bump(a.cLoc, c.location);
+      bump(a.cCount, String(set.size));
+      for (const loc of set) {
+        if (loc.startsWith("?")) continue;
+        bump(a.cLoc, loc);
+        if (!a.cOrder.includes(loc)) a.cOrder.push(loc);
+      }
     }
   }
 
@@ -447,7 +639,19 @@ export function mergeReads(reads: ParsedContract[]): Merged {
     if (a.dN < minVotes && a.cN < minVotes) continue; // one-off garbage line
     const scu = winner(a.scu, minVotes);
     const dLoc = winner(a.dLoc, minVotes);
-    const cLoc = winner(a.cLoc, minVotes);
+    // Pickup places read at least twice, in reading order; their number must match what the
+    // reads agree the contract shows (one place normally, several for a split pickup).
+    const cCount = winner(a.cCount, 1);
+    const want = cCount && "value" in cCount ? Number(cCount.value) : 1;
+    const agreed = a.cOrder.filter((loc) => (a.cLoc.get(loc) ?? 0) >= minVotes);
+    const cLoc: { value: string[] } | { conflict: string } | null =
+      agreed.length === 0
+        ? null
+        : agreed.length > want
+          ? { conflict: agreed.join(" vs ") }
+          : agreed.length < want
+            ? null
+            : { value: agreed };
     if (!scu) problems.push(`${commodity}: quantity not read twice`);
     else if ("conflict" in scu) problems.push(`${commodity} quantity ${scu.conflict}`);
     if (!dLoc) problems.push(`${commodity}: delivery place not read twice`);
@@ -456,7 +660,7 @@ export function mergeReads(reads: ParsedContract[]): Merged {
     else if ("conflict" in cLoc) problems.push(`${commodity} pickup ${cLoc.conflict}`);
     if (scu && "value" in scu && dLoc && "value" in dLoc && cLoc && "value" in cLoc) {
       delivers.push({ commodity, location: dLoc.value, scu: Number(scu.value) });
-      collects.push({ commodity, location: cLoc.value, scu: 0 });
+      for (const loc of cLoc.value) collects.push({ commodity, location: loc, scu: 0 });
     }
   }
   const seen = Math.max(0, ...reads.map((r) => r.expectedDelivers));
@@ -473,6 +677,7 @@ export function mergeReads(reads: ParsedContract[]): Merged {
       corporation: base.corporation,
       lines: base.lines,
       suggestedPickup: base.suggestedPickup,
+      maxContainerSize: voteMaxContainerSize(reads),
     },
     delivers,
     collects

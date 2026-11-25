@@ -1,0 +1,23 @@
+{
+ "engine": "tesseract.js 5.1.1 (eng)",
+ "region": {
+  "x0": 2238.375,
+  "y0": 477.93,
+  "x1": 3575,
+  "y1": 1862.1000000000001
+ },
+ "full": "-\n——  ——\n# MARK ALL READ CA OFFERS ACCEPTED (2/10) HISTORY BEACONS (x)\n® HAULING - STELLAR dpc ——\n5 2 A . o ;\n= Member Hauler Needed for Medium Shipment Sasi —\na Contracted By Red Wind Linehaul\nMEMBER HAULER NEEDED FOR\nMEDIUM SHIPMENT 745k\nRED WIND LINEHAUL DETAILS PRIMARY OBJECTIVES\n3 RED WIND LINEHAUL © © Deliver 0/129 SCU of Carbon to Ruin Station above Pyro |\nMEMBER HAULER NEEDED FOR 'YOUR GOODS IN GOOD HANDS' VI.\nMEDIUM SHIPMENT 745k ST LT Lg 3 i\nRED WIND LINEHAUL ¢ Collect Carbon from Starlight Service Station.\nJust got off a comm with a client. They got cargo (8 SCU or\nsmaller) at a few different locations ready to be taken over to a © Collect Carbon from Gaslight.\nfreight elevator at Ruin Station above Pyro VI. © Collect Carbon from Orbituary.\nPICK UP LOCATIONS (ANY ORDER)\n- Freight elevator at Starlight Service Station at the L1 Lagrange\nof Pyro lll\n- Freight elevator at Gaslight at the L2 Lagrange of Pyro V\n- Freight elevator at Orbituary above Pyro Ill\nI'd recommend taking a few minutes to plan your route before\ntaking off. Might save you a bit of fuel. And don't forget to pack a\nhandheld tractor beam to bring along.\n. rs | \\\no ~\n1 ABANDON UNTRACK\nPe\na 7\nE\nY = 18573184 A ® \"uy = 3 A L) & @ LN\n§ 4 GATSU HOME HEALTH COMMS MAPS JOURNAL ASSETS REP WALLET LANDING VEHICLES\non — ——o— -\nrs ——\n",
+ "passes": [
+  {
+   "scale": 3,
+   "psm": "4",
+   "text": "PRIMARY OBJECTIVES\n\n< Deliver 0/7129 SCU of Carbon to Ruin Station above Pyro\nVI.\n\n¢ Collect Carbon from Starlight Service Station.\n¢ Collect Carbon from Gaslight.\n¢ Collect Carbon from Orbituary.\n\nUNTRACK\n\n» ® 0 Q Ne \\\n\n"
+  },
+  {
+   "scale": 2,
+   "psm": "6",
+   "text": "PRIMARY OBJECTIVES\n< Deliver 0/129 SCU of Carbon to Ruin Station above Pyro\n\nVI.\n\n¢$ Collect Carbon from Starlight Service Station.\n\n¢ Collect Carbon from Gaslight.\n\n¢ Collect Carbon from Orbituary.\n\ng\nUNTRACK\n» ® on © NE \\\n"
+  }
+ ],
+ "header": ": B\nReward a 745,250\nContract Deadline N/A\nContracted By Red Wind Linehaul\n"
+}

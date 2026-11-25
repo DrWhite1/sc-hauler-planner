@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from "react";
 import { createWorker } from "tesseract.js";
 import { useHaulerStore } from "@/lib/store";
-import { LOCATIONS } from "@/lib/locations";
+import { LOCATIONS, systemOf } from "@/lib/locations";
 import {
   parseContractText,
   applySuggestedPickups,
@@ -14,6 +14,7 @@ import {
 } from "@/lib/parseContract";
 
 const KNOWN_LOCATIONS = LOCATIONS.map((l) => l.name);
+const PARSE_OPTS = { systemOf };
 
 type LocalOcrApi = {
   ocrContract?: (bytes: Uint8Array) => Promise<{ ok: boolean; header?: string; objectives?: string; error?: string }>;
@@ -79,7 +80,8 @@ export function MissionOCR() {
         maxContainerSize: result.maxContainerSize,
       });
       const legNote = result.legs.length > 2 ? ` · ${result.legs.length} legs` : "";
-      setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC${legNote}`);
+      const note = result.notes.length ? ` · ${result.notes.join("; ")}` : "";
+      setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC${legNote}${note}`);
     },
     [addMission]
   );
@@ -102,7 +104,7 @@ export function MissionOCR() {
           const res = await api.ocrContract(new Uint8Array(await file.arrayBuffer()));
           if (res.ok && res.objectives) {
             const localText = `${res.header ?? ""}\n${res.objectives}`;
-            const local = parseContractText(localText, KNOWN_LOCATIONS);
+            const local = parseContractText(localText, KNOWN_LOCATIONS, PARSE_OPTS);
             setExtracted(localText);
             setParsed(local);
             if (local.complete && local.reward) {
@@ -121,7 +123,7 @@ export function MissionOCR() {
       const { data } = await worker.recognize(file);
 
       let text = data.text;
-      let result = parseContractText(text, KNOWN_LOCATIONS);
+      let result = parseContractText(text, KNOWN_LOCATIONS, PARSE_OPTS);
       const reads: ParsedContract[] = [];
 
       // Contract screens come out interleaved (list, story text and objectives mixed) when read
@@ -154,7 +156,7 @@ export function MissionOCR() {
             const crop = await cropRegion(file, region, pass.scale);
             await worker.setParameters({ tessedit_pageseg_mode: pass.psm as any });
             const second = await worker.recognize(crop);
-            const next = parseContractText(second.data.text, KNOWN_LOCATIONS);
+            const next = parseContractText(second.data.text, KNOWN_LOCATIONS, PARSE_OPTS);
             // Reward, corporation and the DETAILS pickup hint sit outside the objectives crop.
             if (!next.reward) next.reward = result.reward;
             if (!next.corporation) next.corporation = result.corporation;
@@ -177,7 +179,7 @@ export function MissionOCR() {
             };
             const hCrop = await cropRegion(file, header, 3);
             await worker.setParameters({ tessedit_pageseg_mode: "6" as any });
-            const h = parseContractText((await worker.recognize(hCrop)).data.text, KNOWN_LOCATIONS);
+            const h = parseContractText((await worker.recognize(hCrop)).data.text, KNOWN_LOCATIONS, PARSE_OPTS);
             if (h.reward || h.corporation) {
               for (const r of reads) {
                 if (h.reward) r.reward = h.reward;
@@ -306,7 +308,7 @@ export function MissionOCR() {
         <div className="mt-3 text-xs space-y-1 text-accent/80">
           {parsed.collects.map((c, i) => (
             <div key={`c${i}`}>
-              Collect {c.commodity} from {c.location}
+              Collect {c.scuEstimated ? "≈" : ""}{c.scu || "?"} SCU {c.commodity} from {c.location}
             </div>
           ))}
           {parsed.delivers.map((d, i) => (
@@ -314,6 +316,10 @@ export function MissionOCR() {
               Deliver {d.scu} SCU {d.commodity} to {d.location}
             </div>
           ))}
+          <div className="text-accent/50">
+            Max container:{" "}
+            {parsed.maxContainerSize ? `${parsed.maxContainerSize} SCU` : "not found (set it in Edit, else the ship max is used)"}
+          </div>
         </div>
       )}
 

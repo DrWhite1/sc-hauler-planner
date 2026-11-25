@@ -9,6 +9,7 @@ export type Stop = {
   scu: number;
   missionId: string;
   commodity?: string;
+  scuEstimated?: boolean; // pickup amount is an even split, the contract does not state it
   cargoAfter?: number; // running cargo after this stop
 };
 
@@ -142,6 +143,7 @@ export function planRoute(
         scu: leg.scu,
         missionId: m.id,
         commodity: leg.commodity,
+        ...(leg.scuEstimated ? { scuEstimated: true } : {}),
       });
     }
   }

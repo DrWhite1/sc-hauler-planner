@@ -22,13 +22,14 @@ export function ShipSelector() {
         <option value="">Select a ship...</option>
         {SHIPS.map((s) => (
           <option key={s.id} value={s.id}>
-            {s.name} ({s.scu} SCU)
+            {s.name} ({s.scu.toLocaleString()} SCU){s.concept ? " · concept" : ""}
           </option>
         ))}
       </select>
       {selectedShip && (
         <p className="mt-2 text-xs text-sage">
-          Capacity: {selectedShip.scu} SCU · Max container: {selectedShip.maxContainer} SCU
+          Capacity: {selectedShip.scu.toLocaleString()} SCU · Max container: {selectedShip.maxContainer} SCU
+          {selectedShip.concept && <span className="text-accent/40"> · concept ship, numbers may change</span>}
         </p>
       )}
     </div>
