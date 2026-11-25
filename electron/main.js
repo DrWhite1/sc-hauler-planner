@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const https = require("https");
 const { exec } = require("child_process");
+const os = require("os");
 const voice = require("./voice");
 
 function createWindow() {
@@ -36,36 +37,42 @@ function createWindow() {
   }
 }
 
-const VK = {
-  a: 0x41, b: 0x42, c: 0x43, d: 0x44, e: 0x45, f: 0x46, g: 0x47, h: 0x48,
-  i: 0x49, j: 0x4a, k: 0x4b, l: 0x4c, m: 0x4d, n: 0x4e, o: 0x4f, p: 0x50,
-  q: 0x51, r: 0x52, s: 0x53, t: 0x54, u: 0x55, v: 0x56, w: 0x57, x: 0x58,
-  y: 0x59, z: 0x5a,
-  "0": 0x30, "1": 0x31, "2": 0x32, "3": 0x33, "4": 0x34,
-  "5": 0x35, "6": 0x36, "7": 0x37, "8": 0x38, "9": 0x39,
-};
+function findAhk() {
+  const candidates = [
+    "C:\\Program Files\\AutoHotkey\\v2\\AutoHotkey64.exe",
+    "C:\\Program Files\\AutoHotkey\\AutoHotkey.exe",
+    "C:\\Program Files (x86)\\AutoHotkey\\AutoHotkey.exe",
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return null;
+}
 
 function sendKey(key) {
   const k = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
-  const vk = VK[k];
-  if (!vk) {
-    console.log("unknown key:", key);
+  if (!k) return;
+
+  if (process.platform !== "win32") {
+    exec(`xdotool key ${k}`);
     return;
   }
 
-  if (process.platform === "win32") {
-    const script = path.join(__dirname, "sendkey.ps1");
-    exec(
-      `powershell -NoProfile -ExecutionPolicy Bypass -File "${script}" -vk ${vk}`,
-      (err, stdout, stderr) => {
-        if (err) console.log("sendkey error:", err.message);
-        if (stderr) console.log("sendkey stderr:", stderr);
-        if (stdout) console.log("sendkey:", stdout.trim());
-      }
-    );
-  } else {
-    exec(`xdotool key ${k}`);
+  const ahk = findAhk();
+  if (!ahk) {
+    console.log("AutoHotkey not found. Install from https://www.autohotkey.com/");
+    return;
   }
+
+  const script = `#Requires AutoHotkey v2.0\nSendMode "Input"\nSend "{${k}}"\nExitApp\n`;
+  const tmp = path.join(os.tmpdir(), `sc-key-${Date.now()}.ahk`);
+  fs.writeFileSync(tmp, script);
+
+  exec(`"${ahk}" "${tmp}"`, (err) => {
+    if (err) console.log("ahk error:", err.message);
+    else console.log("ahk sent:", k);
+    try { fs.unlinkSync(tmp); } catch {}
+  });
 }
 
 ipcMain.on("send-key", (_e, key) => sendKey(key));
