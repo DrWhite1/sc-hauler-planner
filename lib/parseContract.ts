@@ -24,10 +24,15 @@ export const LOCATION_ALIASES: Record<string, string> = {
   "modern ic": "MIC-L5 Modern Icarus",
   "nb int": "NB Int. Spaceport",
   spaceport: "NB Int. Spaceport",
-  arccorp: "ArcCorp Mining Area 157",
   rayari: "Rayari Kaitag Research Outpost",
   kaitag: "Rayari Kaitag Research Outpost",
   kaltag: "Rayari Kaitag Research Outpost",
+  "hdms-ryder": "HDMS-Ryder",
+  ryder: "HDMS-Ryder",
+  arccorp: "ArcCorp Mining Area",
+  "sunset mesa": "Sunset Mesa",
+  "greycat stanton iv": "Greycat Stanton IV Production Complex-A",
+  "production complex-a": "Greycat Stanton IV Production Complex-A",
   hdms: "HDMS-Oparei",
   oparei: "HDMS-Oparei",
 };
@@ -57,7 +62,7 @@ function stripListNoise(s: string): string {
   return (cut === -1 ? s : s.slice(0, cut)).trim();
 }
 
-export type LocationMatch = { name: string; raw: string };
+export type LocationMatch = { name: string; raw: string; listed?: boolean };
 
 function buildKeys(known: string[]): [string, string][] {
   const keys: [string, string][] = [];
@@ -86,7 +91,13 @@ function windowAfter(full: string, from: number, len = 80): string {
 export function matchLocation(windowText: string, known: string[] = []): LocationMatch {
   const cleaned = stripListNoise(windowText);
   const lower = normalizeLCodes(cleaned.toLowerCase());
-  const raw = cleaned.split(/\.\s|\s+on\s+/i)[0].trim().slice(0, 40);
+  const raw = cleaned.split(/\.(?:\s|$)|\s+on\s+/i)[0].trim().replace(/\.$/, "").slice(0, 50);
+  // "ArcCorp Mining Area 141": the number is part of the name.
+  const arc = /arc\s*corp\s+mining\s+are[a-z]\s+([0-9OoIl]{2,3})/i.exec(cleaned);
+  if (arc) {
+    const digits = arc[1].replace(/[Oo]/g, "0").replace(/[Il]/g, "1");
+    return { name: `ArcCorp Mining Area ${digits}`, raw };
+  }
   let best: { idx: number; len: number; name: string } | null = null;
   for (const [key, name] of buildKeys(known)) {
     const idx = lower.indexOf(key);
@@ -95,7 +106,15 @@ export function matchLocation(windowText: string, known: string[] = []): Locatio
       best = { idx, len: key.length, name };
     }
   }
-  return { name: best ? best.name : "", raw };
+  if (best) return { name: best.name, raw };
+  // Not in the location list: accept a well-formed name ("Sunset Mesa") so new places work.
+  // Garbled reads differ between OCR passes, so the consensus check rejects them.
+  return { name: looksLikeLocation(raw) ? raw : "", raw, listed: false };
+}
+
+function looksLikeLocation(raw: string): boolean {
+  if (!/^[A-Z][A-Za-z0-9'\-]+( [A-Za-z0-9'\-]+){0,5}$/.test(raw)) return false;
+  return raw.split(" ").every((t) => t.length >= 2 || /^[AIVX]$/.test(t));
 }
 
 const cleanCommodity = (s: string) => s.replace(/\s+/g, " ").trim().toLowerCase();
@@ -113,7 +132,14 @@ export type Delivery = { commodity: string; location: string; scu: number; locat
 export type Collection = { commodity: string; location: string; scu: number; locationRaw?: string };
 
 function finalize(
-  base: { reward: number; corporation: string; lines: string[]; suggestedPickup: string | null },
+  base: {
+    reward: number;
+    corporation: string;
+    lines: string[];
+    suggestedPickup: string | null;
+    expectedDelivers?: number;
+    expectedCollects?: number;
+  },
   delivers: Delivery[],
   collects: Collection[],
   suggestedUsed = false
@@ -144,7 +170,14 @@ function finalize(
   for (const d of delivers) if (!d.location) unknownLocations.push(`deliver ${d.commodity}: "${d.locationRaw ?? ""}"`);
   for (const c of collects) if (!c.location) unknownLocations.push(`collect ${c.commodity}: "${c.locationRaw ?? ""}"`);
 
+  // Objective lines that were seen but could not be read (e.g. hidden by a glare or lens flare)
+  // must not let a partial contract look complete.
+  const hiddenDelivers = Math.max(0, (base.expectedDelivers ?? 0) - delivers.length);
+  const hiddenCollects = Math.max(0, (base.expectedCollects ?? 0) - collects.length);
+
   const warnings: string[] = [];
+  if (hiddenDelivers) warnings.push(`${hiddenDelivers} delivery line(s) could not be read (covered or blurry?)`);
+  if (hiddenCollects) warnings.push(`${hiddenCollects} pickup line(s) could not be read (covered or blurry?)`);
   if (!delivers.length) warnings.push("no delivery objectives read");
   if (!collects.length && delivers.length) warnings.push("no pickup lines read");
   if (missingPickups.length) warnings.push(`no pickup read for: ${missingPickups.join(", ")}`);
@@ -154,6 +187,8 @@ function finalize(
   const complete =
     delivers.length > 0 &&
     collects.length > 0 &&
+    hiddenDelivers === 0 &&
+    hiddenCollects === 0 &&
     missingPickups.length === 0 &&
     orphanCollects.length === 0 &&
     unknownLocations.length === 0 &&
@@ -225,7 +260,7 @@ export function parseContractText(rawText: string, knownLocations: string[] = []
   const elev = /freight\s+elevator\s+at\s+/i.exec(full);
   if (elev) {
     const loc = matchLocation(windowAfter(full, elev.index + elev[0].length, 60), knownLocations);
-    if (loc.name) suggestedPickup = loc.name;
+    if (loc.name && loc.listed !== false) suggestedPickup = loc.name;
   }
 
   const delivers: Delivery[] = [];
@@ -249,7 +284,13 @@ export function parseContractText(rawText: string, knownLocations: string[] = []
     if (commodity) collects.push({ commodity, location: loc.name, scu: 0, locationRaw: loc.raw });
   }
 
-  return finalize({ reward, corporation, lines: text.split(/\n+/), suggestedPickup }, delivers, collects);
+  const expectedDelivers = (full.match(/\bdeliver\s+[0-9OoIl]+\s*\/\s*\d+/gi) ?? []).length;
+  const expectedCollects = (text.match(/(?:^|\n)[^A-Za-z0-9\n]*collect\b/gi) ?? []).length;
+  return finalize(
+    { reward, corporation, lines: text.split(/\n+/), suggestedPickup, expectedDelivers, expectedCollects },
+    delivers,
+    collects
+  );
 }
 
 // When the small "Collect ..." lines could not be read but the DETAILS text names the pickup,
@@ -263,7 +304,7 @@ export function applySuggestedPickups(r: ParsedContract): ParsedContract {
   }
   const delivers = r.delivers.map((d) => ({ ...d }));
   return finalize(
-    { reward: r.reward, corporation: r.corporation, lines: r.lines, suggestedPickup: r.suggestedPickup },
+    { reward: r.reward, corporation: r.corporation, lines: r.lines, suggestedPickup: r.suggestedPickup, expectedDelivers: r.delivers.length },
     delivers,
     collects,
     true

@@ -93,7 +93,7 @@ assert.ok(r.delivers.every((d) => d.location === "Sacren's Plot"));
 assert.equal(r.collects.length, 3);
 assert.deepEqual(r.collects.map((c) => [c.location, c.scu]), [
   ["Brio's Breaker Yard", 2],
-  ["ArcCorp Mining Area 157", 1],
+  ["ArcCorp Mining Area", 1],
   ["Rayari Kaitag Research Outpost", 4],
 ]);
 assert.deepEqual(r.missingPickups, ["stims"]);
@@ -186,13 +186,21 @@ Collect Tungsfen from ARC-LZ Lively Pathway Station.`);
 assert.equal(r.pickup, "ARC-L2 Lively Pathway");
 assert.equal(r.complete, true);
 
-// Unknown location is flagged, never stored raw.
+// A well-formed place that is not in the list is accepted as typed...
 r = parseContractText(`Reward 20,000
 Deliver 0/4 SCU of Gold to Seraphim Station.
 Collect Gold from Nowhere Outpost.`);
+assert.equal(r.complete, true);
+assert.equal(r.pickup, "Nowhere Outpost");
+
+// ...but garbled text is flagged, never stored.
+r = parseContractText(`Reward 20,000
+Deliver 0/4 SCU of Gold to Seraphim Station.
+Collect Gold from B- me L x.`);
 assert.equal(r.complete, false);
 assert.equal(r.pickup, "");
 assert.ok(r.unknownLocations.length === 1);
+
 // consensus voting: a single misread digit (4 read as 74) must not be accepted silently
 {
   const mk = (n) => parse(`Deliver 0/${n} SCU of Agricium to Seraphim Station.\nCollect Agricium from Port Olisar.`, known);
@@ -202,5 +210,57 @@ assert.ok(r.unknownLocations.length === 1);
   assert.equal(pickConsensus([a, b, c]).state, "agreed");
   assert.equal(pickConsensus([a]).state, "single");
   assert.equal(pickConsensus([]).state, "none");
+}
+// Quartz contract (real OCR of the objectives crop): location not in the list, wrapped name
+{
+  const r = parse(`PRIMARY OBJECTIVES
+
+© Deliver 0/6 SCU of Quartz to Greycat Stanton IV
+Production Complex-A on microTech.
+
+¢ Collect Quartz from Port Tressler.
+`, known);
+  assert.equal(r.complete, true);
+  assert.equal(r.delivers[0].location, "Greycat Stanton IV Production Complex-A");
+  assert.equal(r.collects[0].location, "Port Tressler");
+  assert.equal(r.collects[0].scu, 6);
+}
+
+// Ling contract with a lens flare hiding the first objective: must NOT look complete
+{
+  const r = parse(`PRIMARY OBJECTIVES
+
+< Deliver 0/2 SCU of
+
+¢ Collect
+6.
+
+< Deliver 0/1 SCU of Distilled Spirits to Sunset Mesa on
+Distilled Spirits from HOMS-Ryder.
+
+Deliver 0/4 SCU of Processed Food to Sunset Mesa on
+Pyro Il.
+© Collect Processed Food from ArcCorp Mining Area 061.
+< Deliver 0/2 SCU of Stims to Sunset Mesa on Pyro il.
+¢ Collect Stims from ArcCorp Mining Area 141.
+`, known);
+  assert.equal(r.complete, false);
+  assert.ok(r.warnings.some((w) => /could not be read/.test(w)));
+}
+
+// Full Ling contract with unlisted places and numbered ArcCorp areas
+{
+  const r = parse(`Deliver 0/2 SCU of Souvenirs to Sunset Mesa on Pyro II.
+Collect Souvenirs from Shubin Mining Facility SMCa-6.
+Deliver 0/1 SCU of Distilled Spirits to Sunset Mesa on Pyro II.
+Collect Distilled Spirits from HDMS-Ryder.
+Deliver 0/4 SCU of Processed Food to Sunset Mesa on Pyro II.
+Collect Processed Food from ArcCorp Mining Area 061.
+Deliver 0/2 SCU of Stims to Sunset Mesa on Pyro II.
+Collect Stims from ArcCorp Mining Area 141.
+`, known);
+  assert.equal(r.complete, true);
+  assert.deepEqual(r.collects.map((c) => c.location), ["Shubin Mining Facility SMCa-6", "HDMS-Ryder", "ArcCorp Mining Area 061", "ArcCorp Mining Area 141"]);
+  assert.ok(r.delivers.every((d) => d.location === "Sunset Mesa"));
 }
 console.log("ALL TESTS PASSED");
