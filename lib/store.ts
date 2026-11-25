@@ -2,6 +2,13 @@ import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import type { Ship } from "./ships";
 
+export type Leg = {
+  type: "pickup" | "dropoff";
+  location: string;
+  scu: number;
+  commodity?: string;
+};
+
 export type Mission = {
   id: string;
   pickup: string;
@@ -10,6 +17,7 @@ export type Mission = {
   scu: number;
   corporation?: string;
   rank?: string;
+  legs?: Leg[]; // optional multi-stop legs
 };
 
 type State = {
@@ -17,6 +25,7 @@ type State = {
   missions: Mission[];
   setShip: (ship: Ship | null) => void;
   addMission: (mission: Omit<Mission, "id">) => void;
+  updateMission: (id: string, updates: Partial<Mission>) => void;
   removeMission: (id: string) => void;
   clearMissions: () => void;
 };
@@ -37,6 +46,12 @@ export const useHaulerStore = create<State>()(
             ...state.missions,
             { ...mission, id: generateId() },
           ],
+        })),
+      updateMission: (id, updates) =>
+        set((state) => ({
+          missions: state.missions.map((m) =>
+            m.id === id ? { ...m, ...updates } : m
+          ),
         })),
       removeMission: (id) =>
         set((state) => ({
