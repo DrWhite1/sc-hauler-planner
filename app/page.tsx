@@ -2,6 +2,7 @@
 
 import { ShipSelector } from "@/components/ShipSelector";
 import { MissionForm } from "@/components/MissionForm";
+import { MissionOCR } from "@/components/MissionOCR";
 import { RouteView } from "@/components/RouteView";
 import { useHaulerStore } from "@/lib/store";
 
@@ -22,6 +23,7 @@ export default function Home() {
       <div className="grid gap-6 md:grid-cols-3">
         <div className="md:col-span-1 space-y-6">
           <ShipSelector />
+          <MissionOCR />
           <MissionForm />
         </div>
 
