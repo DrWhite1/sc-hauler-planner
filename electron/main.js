@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, session } = require("electron");
+const { app, BrowserWindow, ipcMain, session, desktopCapturer } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
@@ -123,6 +123,13 @@ ipcMain.on("send-key", (_e, payload) => {
   const key = typeof payload === "string" ? payload : payload.key;
   const duration = typeof payload === "object" ? payload.duration : 0;
   sendKey(key, duration);
+});
+
+ipcMain.handle("capture-screenshot", async () => {
+  const sources = await desktopCapturer.getSources({ types: ["screen"], thumbnailSize: { width: 1920, height: 1080 } });
+  if (!sources.length) return null;
+  const img = sources[0].thumbnail;
+  return img.toPNG().toString("base64");
 });
 
 ipcMain.handle("vosk-status", () => ({
