@@ -31,6 +31,8 @@ export function RouteView() {
     );
   }
 
+  const overPeak = route.peakScu > selectedShip.scu;
+
   return (
     <div className="rounded-lg border border-elevated bg-elevated/50 p-4">
       <h2 className="text-lg font-semibold mb-4">
@@ -48,10 +50,11 @@ export function RouteView() {
           <div className="text-gold font-medium">{route.totalReward.toLocaleString()} aUEC</div>
         </div>
         <div>
-          <div className="text-accent/50 text-xs">Total SCU</div>
-          <div className={route.totalScu > selectedShip.scu ? "text-red-400" : "text-sage"}>
-            {route.totalScu} / {selectedShip.scu}
+          <div className="text-accent/50 text-xs">Peak Cargo</div>
+          <div className={overPeak ? "text-red-400" : "text-sage"}>
+            {route.peakScu} / {selectedShip.scu} SCU
           </div>
+          <div className="text-[10px] text-accent/40">Total moved: {route.totalScu}</div>
         </div>
         <div>
           <div className="text-accent/50 text-xs">Stops</div>
@@ -60,6 +63,7 @@ export function RouteView() {
         <div>
           <div className="text-accent/50 text-xs">Est. aUEC/hr</div>
           <div className="text-gold">{Math.round(route.auecPerHour).toLocaleString()}</div>
+          <div className="text-[10px] text-accent/40">~{Math.round(route.estimatedMinutes)} min</div>
         </div>
       </div>
 
@@ -70,14 +74,16 @@ export function RouteView() {
             <span className={stop.type === "pickup" ? "text-sage" : "text-gold"}>
               {stop.type === "pickup" ? "Pickup" : "Deliver"} · {stop.location}
             </span>
-            <span className="ml-auto text-xs text-accent/50">{stop.scu} SCU</span>
+            <span className="ml-auto text-xs text-accent/50">
+              {stop.type === "pickup" ? "+" : "-"}{stop.scu} → {stop.cargoAfter} SCU
+            </span>
           </li>
         ))}
       </ol>
 
-      {route.totalScu > selectedShip.scu && (
+      {overPeak && (
         <p className="mt-4 text-sm text-red-400">
-          Warning: Combined cargo exceeds ship capacity. Split the run.
+          Peak cargo ({route.peakScu} SCU) exceeds ship capacity. Deliver earlier or split the run.
         </p>
       )}
     </div>
