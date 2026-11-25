@@ -10,49 +10,107 @@ declare global {
   }
 }
 
+type Status = "unavailable" | "idle" | "listening" | "error";
+
 export function VoicePanel() {
   const { voiceCommands, addVoiceCommand, removeVoiceCommand } = useHaulerStore();
-  const [listening, setListening] = useState(false);
+  const [status, setStatus] = useState<Status>("idle");
+  const [statusMsg, setStatusMsg] = useState("");
   const [lastHeard, setLastHeard] = useState("");
-  const [lastAction, setLastAction] = useState("");
+  const [lastMatch, setLastMatch] = useState("");
   const [newPhrase, setNewPhrase] = useState("");
   const [newKey, setNewKey] = useState("");
   const recRef = useRef<any>(null);
+  const listeningRef = useRef(false);
 
   useEffect(() => {
-    if (typeof window === "undefined" || !window.webkitSpeechRecognition) return;
+    if (typeof window === "undefined") return;
+    if (!window.webkitSpeechRecognition) {
+      setStatus("unavailable");
+      setStatusMsg("Speech recognition not supported in this build");
+      return;
+    }
+    setStatus("idle");
+    setStatusMsg("Ready — click Start and speak");
+
     const Rec = window.webkitSpeechRecognition;
     const rec = new Rec();
     rec.continuous = true;
-    rec.interimResults = false;
+    rec.interimResults = true;
     rec.lang = "en-US";
+
+    rec.onstart = () => {
+      setStatus("listening");
+      setStatusMsg("Listening… speak a command");
+    };
+
     rec.onresult = (e: any) => {
-      const text = e.results[e.results.length - 1][0].transcript.toLowerCase().trim();
+      const result = e.results[e.results.length - 1];
+      const text = result[0].transcript.toLowerCase().trim();
       setLastHeard(text);
+      if (!result.isFinal) return;
+
       const match = voiceCommands.find((c) => text.includes(c.phrase.toLowerCase()));
       if (match) {
-        setLastAction(`${match.phrase} → ${match.key.toUpperCase()}`);
-        window.electronAPI?.sendKey(match.key);
+        setLastMatch(`${match.phrase} → ${match.key.toUpperCase()}`);
+        setStatusMsg(`Matched: ${match.phrase}`);
+        if (window.electronAPI?.sendKey) {
+          window.electronAPI.sendKey(match.key);
+        } else {
+          setStatusMsg(`Matched “${match.phrase}” but key sending not available (rebuild the app)");
+        }
+      } else {
+        setStatusMsg(`Heard “${text}” — no match`);
       }
     };
-    rec.onend = () => {
-      if (listening) rec.start();
+
+    rec.onerror = (e: any) => {
+      setStatus("error");
+      setStatusMsg(`Error: ${e.error || "unknown"}`);
+      listeningRef.current = false;
     };
+
+    rec.onend = () => {
+      if (listeningRef.current) {
+        try { rec.start(); } catch {}
+      } else {
+        setStatus("idle");
+        setStatusMsg("Stopped");
+      }
+    };
+
     recRef.current = rec;
-    return () => rec.stop();
-  }, [voiceCommands, listening]);
+    return () => {
+      listeningRef.current = false;
+      try { rec.stop(); } catch {}
+    };
+  }, [voiceCommands]);
 
   const toggle = () => {
-    if (!recRef.current) {
-      setLastAction("Speech recognition not available");
-      return;
-    }
-    if (listening) {
-      recRef.current.stop();
-      setListening(false);
+    if (!recRef.current) return;
+    if (listeningRef.current) {
+      listeningRef.current = false;
+      try { recRef.current.stop(); } catch {}
+      setStatus("idle");
+      setStatusMsg("Stopped");
     } else {
-      recRef.current.start();
-      setListening(true);
+      listeningRef.current = true;
+      try {
+        recRef.current.start();
+      } catch (err) {
+        setStatus("error");
+        setStatusMsg("Could not start recognition");
+        listeningRef.current = false;
+      }
+    }
+  };
+
+  const testKey = () => {
+    if (window.electronAPI?.sendKey) {
+      window.electronAPI.sendKey("t");
+      setStatusMsg("Sent test key T — check if it landed in the focused window");
+    } else {
+      setStatusMsg("Key sending not available — rebuild the desktop app");
     }
   };
 
@@ -63,22 +121,55 @@ export function VoicePanel() {
     setNewKey("");
   };
 
+  const statusColor =
+    status === "listening" ? "text-sage" :
+    status === "error" ? "text-red-400" :
+    status === "unavailable" ? "text-red-400" : "text-accent/50";
+
   return (
     <div className="panel p-3">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-xs font-medium uppercase tracking-wider text-accent/50">Voice</h3>
         <button
           onClick={toggle}
-          className={`text-[10px] px-2 py-0.5 rounded ${listening ? "bg-sage text-ink" : "border border-elevated text-accent/60"}`}
+          disabled={status === "unavailable"}
+          className={`text-[10px] px-2 py-0.5 rounded transition ${
+            status === "listening"
+              ? "bg-sage text-ink"
+              : "border border-elevated text-accent/70 hover:bg-ink"
+          }`}
         >
-          {listening ? "Listening" : "Start"}
+          {status === "listening" ? "Stop" : "Start"}
         </button>
       </div>
 
-      {lastHeard && <p className="text-[10px] text-accent/40 mb-1">Heard: {lastHeard}</p>}
-      {lastAction && <p className="text-[10px] text-gold mb-2">{lastAction}</p>}
+      <div className={`flex items-center gap-2 text-[10px] mb-2 ${statusColor}`}>
+        <span
+          className={`w-2 h-2 rounded-full ${
+            status === "listening" ? "bg-sage animate-pulse" :
+            status === "error" || status === "unavailable" ? "bg-red-400" : "bg-accent/30"
+          }`}
+        />
+        <span>{statusMsg || (status === "idle" ? "Idle" : status)}</span>
+      </div>
 
-      <ul className="space-y-1 text-xs mb-2 max-h-32 overflow-auto">
+      {lastHeard && (
+        <p className="text-[10px] text-accent/50 mb-1">
+          Heard: <span className="text-accent">{lastHeard}</span>
+        </p>
+      )}
+      {lastMatch && (
+        <p className="text-[10px] text-gold mb-2">Last match: {lastMatch}</p>
+      )}
+
+      <button
+        onClick={testKey}
+        className="text-[10px] mb-2 text-accent/50 hover:text-accent underline"
+      >
+        Test key send (T)
+      </button>
+
+      <ul className="space-y-1 text-xs mb-2 max-h-28 overflow-auto">
         {voiceCommands.map((c) => (
           <li key={c.id} className="flex justify-between items-center">
             <span>“{c.phrase}” → <span className="text-gold">{c.key.toUpperCase()}</span></span>
