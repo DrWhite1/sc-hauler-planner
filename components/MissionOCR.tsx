@@ -4,15 +4,71 @@ import { useState, useCallback } from "react";
 import { createWorker } from "tesseract.js";
 import { useHaulerStore } from "@/lib/store";
 
+function parseContractText(text: string) {
+  const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
+  const full = text.replace(/\s+/g, " ");
+
+  // Reward
+  let reward = 0;
+  const rewardMatch = full.match(/(?:Reward|aUEC|AUEC|H\s*)[\s:]*([\d,]+)/i) || full.match(/([\d,]{4,})/);
+  if (rewardMatch) {
+    reward = parseInt(rewardMatch[1].replace(/,/g, ""), 10);
+  }
+
+  // Collect / Deliver pairs
+  const collects: { commodity: string; location: string; scu: number }[] = [];
+  const delivers: { commodity: string; location: string; scu: number }[] = [];
+
+  for (const line of lines) {
+    const collect = line.match(/Collect\s+(\w+)\s+from\s+(.+?)(?:\.|$)/i);
+    if (collect) {
+      collects.push({ commodity: collect[1], location: collect[2].trim(), scu: 0 });
+    }
+    const deliver = line.match(/Deliver\s+([\d.]+)\/?([\d.]+)?\s*SCU\s+of\s+(\w+)\s+to\s+(.+?)(?:\.|$)/i);
+    if (deliver) {
+      const scu = parseFloat(deliver[2] || deliver[1]);
+      delivers.push({
+        commodity: deliver[3],
+        location: deliver[4].trim(),
+        scu,
+      });
+    }
+  }
+
+  // Total SCU from delivers (or fallback)
+  const totalScu = delivers.reduce((s, d) => s + d.scu, 0) || 0;
+
+  // Primary locations
+  const pickupLocs = [...new Set(collects.map((c) => c.location))];
+  const dropoffLocs = [...new Set(delivers.map((d) => d.location))];
+
+  const pickup = pickupLocs.length
+    ? pickupLocs.slice(0, 2).join(" + ")
+    : "";
+  const dropoff = dropoffLocs[0] || "";
+
+  return {
+    reward,
+    totalScu: Math.round(totalScu),
+    pickup,
+    dropoff,
+    collects,
+    delivers,
+    lines,
+  };
+}
+
 export function MissionOCR() {
   const addMission = useHaulerStore((s) => s.addMission);
   const [status, setStatus] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<string | null>(null);
+  const [parsed, setParsed] = useState<ReturnType<typeof parseContractText> | null>(null);
 
   const processImage = useCallback(async (file: File) => {
     setStatus("Reading screenshot...");
     setExtracted(null);
+    setParsed(null);
     const url = URL.createObjectURL(file);
     setPreview(url);
 
@@ -23,53 +79,21 @@ export function MissionOCR() {
 
       const text = data.text;
       setExtracted(text);
-      setStatus("OCR complete — review and add below");
 
-      // Very basic heuristic parsing for common SC contract patterns
-      const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
-      let pickup = "";
-      let dropoff = "";
-      let reward = 0;
-      let scu = 0;
+      const result = parseContractText(text);
+      setParsed(result);
 
-      for (const line of lines) {
-        const lower = line.toLowerCase();
-        if (lower.includes("aec") || lower.includes("auec")) {
-          const match = line.match(/[\d,]+/);
-          if (match) reward = parseInt(match[0].replace(/,/g, ""), 10);
-        }
-        if (lower.includes("scu")) {
-          const match = line.match(/[\d.]+/);
-          if (match) scu = parseFloat(match[0]);
-        }
-        if (lower.includes("pickup") || lower.includes("collect") || lower.includes("from")) {
-          pickup = line.replace(/pickup|collect|from/gi, "").trim();
-        }
-        if (lower.includes("deliver") || lower.includes("to") || lower.includes("drop")) {
-          dropoff = line.replace(/deliver|drop|to/gi, "").trim();
-        }
-      }
-
-      // Fallback: try to find two location-like lines
-      if (!pickup || !dropoff) {
-        const locationLike = lines.filter((l) => l.length > 5 && l.length < 40 && /[A-Z]/.test(l));
-        if (locationLike.length >= 2) {
-          pickup = pickup || locationLike[0];
-          dropoff = dropoff || locationLike[1];
-        }
-      }
-
-      if (pickup && dropoff && reward && scu) {
+      if (result.reward && result.totalScu && result.pickup && result.dropoff) {
         addMission({
-          pickup: pickup.slice(0, 60),
-          dropoff: dropoff.slice(0, 60),
-          reward,
-          scu: Math.round(scu),
+          pickup: result.pickup.slice(0, 80),
+          dropoff: result.dropoff.slice(0, 80),
+          reward: result.reward,
+          scu: result.totalScu,
           corporation: "Covalex",
         });
-        setStatus("Mission added from OCR ✓");
+        setStatus(`Added: ${result.totalScu} SCU · ${result.reward.toLocaleString()} aUEC`);
       } else {
-        setStatus("Partial data found — check extracted text and add manually");
+        setStatus("Partial data found — review below and add manually if needed");
       }
     } catch (err) {
       console.error(err);
@@ -126,6 +150,21 @@ export function MissionOCR() {
 
       {preview && (
         <img src={preview} alt="preview" className="mt-3 max-h-32 rounded border border-elevated object-contain" />
+      )}
+
+      {parsed && (parsed.collects.length > 0 || parsed.delivers.length > 0) && (
+        <div className="mt-3 text-xs space-y-1 text-accent/80">
+          {parsed.collects.map((c, i) => (
+            <div key={`c${i}`}>
+              Collect {c.commodity} from {c.location}
+            </div>
+          ))}
+          {parsed.delivers.map((d, i) => (
+            <div key={`d${i}`}>
+              Deliver {d.scu} SCU {d.commodity} to {d.location}
+            </div>
+          ))}
+        </div>
       )}
 
       {extracted && (
