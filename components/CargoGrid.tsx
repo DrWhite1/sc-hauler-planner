@@ -23,20 +23,27 @@ export function CargoGrid() {
   const placed = useMemo(() => {
     if (!route || !selectedShip) return [];
 
-    // Only show cargo that has been picked up and not yet delivered
-    const onBoard = new Set<string>();
+    // Track which mission+pickup combos are on board.
+    // A completed dropoff for a mission removes all of that mission's cargo.
+    const loadedPickups = new Set<string>();
+    const deliveredMissions = new Set<string>();
+
     for (const stop of route.stops) {
       const key = `${stop.missionId}:${stop.type}:${stop.location}`;
       if (stop.type === "pickup" && completedStops.includes(key)) {
-        onBoard.add(stop.missionId + ":" + stop.location);
+        loadedPickups.add(`${stop.missionId}:${stop.location}`);
       }
       if (stop.type === "dropoff" && completedStops.includes(key)) {
-        onBoard.delete(stop.missionId + ":" + stop.location);
+        deliveredMissions.add(stop.missionId);
       }
     }
 
     const packing = buildPackingOrder(route.stops, missions, selectedShip.maxContainer);
-    const loaded = packing.filter((p) => onBoard.has(p.missionId + ":" + p.location));
+    const loaded = packing.filter(
+      (p) =>
+        loadedPickups.has(`${p.missionId}:${p.location}`) &&
+        !deliveredMissions.has(p.missionId)
+    );
 
     if (loaded.length === 0) return [];
 
