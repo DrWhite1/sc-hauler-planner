@@ -21,6 +21,10 @@ type State = {
   clearMissions: () => void;
 };
 
+function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
 export const useHaulerStore = create<State>()(
   persist(
     (set) => ({
@@ -31,7 +35,7 @@ export const useHaulerStore = create<State>()(
         set((state) => ({
           missions: [
             ...state.missions,
-            { ...mission, id: crypto.randomUUID() },
+            { ...mission, id: generateId() },
           ],
         })),
       removeMission: (id) =>
