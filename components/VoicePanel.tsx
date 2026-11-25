@@ -31,7 +31,7 @@ export function VoicePanel() {
       return;
     }
     setStatus("idle");
-    setStatusMsg("Ready — click Start and speak");
+    setStatusMsg("Ready - click Start and speak");
 
     const Rec = window.webkitSpeechRecognition;
     const rec = new Rec();
@@ -41,7 +41,7 @@ export function VoicePanel() {
 
     rec.onstart = () => {
       setStatus("listening");
-      setStatusMsg("Listening… speak a command");
+      setStatusMsg("Listening... speak a command");
     };
 
     rec.onresult = (e: any) => {
@@ -52,27 +52,27 @@ export function VoicePanel() {
 
       const match = voiceCommands.find((c) => text.includes(c.phrase.toLowerCase()));
       if (match) {
-        setLastMatch(`${match.phrase} → ${match.key.toUpperCase()}`);
-        setStatusMsg(`Matched: ${match.phrase}`);
-        if (window.electronAPI?.sendKey) {
+        setLastMatch(match.phrase + " -> " + match.key.toUpperCase());
+        setStatusMsg("Matched: " + match.phrase);
+        if (window.electronAPI && window.electronAPI.sendKey) {
           window.electronAPI.sendKey(match.key);
         } else {
-          setStatusMsg(`Matched “${match.phrase}” but key sending not available (rebuild the app)");
+          setStatusMsg("Matched " + match.phrase + " but key sending not available");
         }
       } else {
-        setStatusMsg(`Heard “${text}” — no match`);
+        setStatusMsg("Heard: " + text + " - no match");
       }
     };
 
     rec.onerror = (e: any) => {
       setStatus("error");
-      setStatusMsg(`Error: ${e.error || "unknown"}`);
+      setStatusMsg("Error: " + (e.error || "unknown"));
       listeningRef.current = false;
     };
 
     rec.onend = () => {
       if (listeningRef.current) {
-        try { rec.start(); } catch {}
+        try { rec.start(); } catch (e) {}
       } else {
         setStatus("idle");
         setStatusMsg("Stopped");
@@ -82,7 +82,7 @@ export function VoicePanel() {
     recRef.current = rec;
     return () => {
       listeningRef.current = false;
-      try { rec.stop(); } catch {}
+      try { rec.stop(); } catch (e) {}
     };
   }, [voiceCommands]);
 
@@ -90,7 +90,7 @@ export function VoicePanel() {
     if (!recRef.current) return;
     if (listeningRef.current) {
       listeningRef.current = false;
-      try { recRef.current.stop(); } catch {}
+      try { recRef.current.stop(); } catch (e) {}
       setStatus("idle");
       setStatusMsg("Stopped");
     } else {
@@ -106,11 +106,11 @@ export function VoicePanel() {
   };
 
   const testKey = () => {
-    if (window.electronAPI?.sendKey) {
+    if (window.electronAPI && window.electronAPI.sendKey) {
       window.electronAPI.sendKey("t");
-      setStatusMsg("Sent test key T — check if it landed in the focused window");
+      setStatusMsg("Sent test key T - check the focused window");
     } else {
-      setStatusMsg("Key sending not available — rebuild the desktop app");
+      setStatusMsg("Key sending not available - rebuild the desktop app");
     }
   };
 
@@ -172,8 +172,8 @@ export function VoicePanel() {
       <ul className="space-y-1 text-xs mb-2 max-h-28 overflow-auto">
         {voiceCommands.map((c) => (
           <li key={c.id} className="flex justify-between items-center">
-            <span>“{c.phrase}” → <span className="text-gold">{c.key.toUpperCase()}</span></span>
-            <button onClick={() => removeVoiceCommand(c.id)} className="text-red-400/60 text-[10px]">×</button>
+            <span>"{c.phrase}" -> <span className="text-gold">{c.key.toUpperCase()}</span></span>
+            <button onClick={() => removeVoiceCommand(c.id)} className="text-red-400/60 text-[10px]">x</button>
           </li>
         ))}
       </ul>
