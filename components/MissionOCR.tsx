@@ -2,17 +2,15 @@
 
 import { useState, useCallback } from "react";
 import { createWorker } from "tesseract.js";
-import { useHaulerStore } from "@/lib/store";
+import { useHaulerStore, type Leg } from "@/lib/store";
 
 function parseContractText(text: string) {
   const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const full = text.replace(/\s+/g, " ");
 
-  // Reward: prefer large numbers (typical contracts are 20k–200k+) near "Reward" or aUEC
   let reward = 0;
   const candidates: number[] = [];
 
-  // Look on lines containing Reward / aUEC
   for (const line of lines) {
     if (/reward|auec|aec/i.test(line)) {
       const nums = line.match(/[\d,]{4,}/g) || [];
@@ -23,7 +21,6 @@ function parseContractText(text: string) {
     }
   }
 
-  // Fallback: any large number in the text that looks like a reward
   if (candidates.length === 0) {
     const allNums = full.match(/[\d,]{5,}/g) || [];
     for (const n of allNums) {
@@ -33,11 +30,9 @@ function parseContractText(text: string) {
   }
 
   if (candidates.length > 0) {
-    // Take the largest plausible reward
     reward = Math.max(...candidates);
   }
 
-  // Collect / Deliver pairs
   const collects: { commodity: string; location: string; scu: number }[] = [];
   const delivers: { commodity: string; location: string; scu: number }[] = [];
 
@@ -63,7 +58,16 @@ function parseContractText(text: string) {
   const dropoffLocs = [...new Set(delivers.map((d) => d.location))];
 
   const pickup = pickupLocs.length ? pickupLocs.slice(0, 2).join(" + ") : "";
-  const dropoff = dropoffLocs[0] || "";
+  const dropoff = dropoffLocs.length ? dropoffLocs.join(" + ") : "";
+
+  // Build legs for multi-stop
+  const legs: Leg[] = [];
+  for (const c of collects) {
+    legs.push({ type: "pickup", location: c.location, scu: c.scu || Math.round(totalScu / Math.max(1, collects.length)), commodity: c.commodity });
+  }
+  for (const d of delivers) {
+    legs.push({ type: "dropoff", location: d.location, scu: d.scu, commodity: d.commodity });
+  }
 
   return {
     reward,
@@ -72,6 +76,7 @@ function parseContractText(text: string) {
     dropoff,
     collects,
     delivers,
+    legs,
     lines,
   };
 }
@@ -108,8 +113,9 @@ export function MissionOCR() {
           reward: result.reward,
           scu: result.totalScu,
           corporation: "Covalex",
+          legs: result.legs.length > 0 ? result.legs : undefined,
         });
-        setStatus(`Added: ${result.totalScu} SCU · ${result.reward.toLocaleString()} aUEC`);
+        setStatus(`Added: ${result.totalScu} SCU · ${result.reward.toLocaleString()} aUEC${result.legs.length > 2 ? ` · ${result.legs.length} legs` : ""}`);
       } else {
         setStatus("Partial data found — review below and add manually if needed");
       }
