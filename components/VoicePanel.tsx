@@ -65,17 +65,26 @@ export function VoicePanel() {
     };
 
     rec.onerror = (e: any) => {
+      const err = e.error || "unknown";
       setStatus("error");
-      setStatusMsg("Error: " + (e.error || "unknown"));
       listeningRef.current = false;
+      if (err === "not-allowed") {
+        setStatusMsg("Microphone blocked. Allow mic access for this app in Windows settings.");
+      } else if (err === "network") {
+        setStatusMsg("Network error. Speech recognition needs internet (Google service).");
+      } else if (err === "no-speech") {
+        setStatusMsg("No speech detected. Try again.");
+      } else {
+        setStatusMsg("Error: " + err);
+      }
     };
 
     rec.onend = () => {
       if (listeningRef.current) {
         try { rec.start(); } catch (e) {}
       } else {
-        setStatus("idle");
-        setStatusMsg("Stopped");
+        setStatus((s) => (s === "error" ? s : "idle"));
+        setStatusMsg((m) => (m.startsWith("Error") || m.startsWith("Microphone") || m.startsWith("Network") ? m : "Stopped"));
       }
     };
 
@@ -95,6 +104,8 @@ export function VoicePanel() {
       setStatusMsg("Stopped");
     } else {
       listeningRef.current = true;
+      setStatus("listening");
+      setStatusMsg("Starting...");
       try {
         recRef.current.start();
       } catch (err) {
