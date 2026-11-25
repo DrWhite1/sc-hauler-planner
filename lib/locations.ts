@@ -1,59 +1,69 @@
-export const LOCATIONS = [
-  // Stanton - Main stations
-  "Everus Harbor",
-  "Port Tressler",
-  "Seraphim Station",
-  "Baijini Point",
-  "Port Olisar",
-  "Grim HEX",
+export type Location = {
+  name: string;
+  externalPort: boolean;
+};
 
-  // Stanton - Cities
-  "Lorville",
-  "Area18",
-  "New Babbage",
-  "Orison",
+export const LOCATIONS: Location[] = [
+  // Stanton - Main stations (have external freight elevators)
+  { name: "Everus Harbor", externalPort: true },
+  { name: "Port Tressler", externalPort: true },
+  { name: "Seraphim Station", externalPort: true },
+  { name: "Baijini Point", externalPort: true },
+  { name: "Port Olisar", externalPort: false },
+  { name: "Grim HEX", externalPort: false },
 
-  // Stanton - Lagrange stations
-  "ARC-L1 Wide Forest",
-  "ARC-L2 Lively Pathway",
-  "ARC-L3 Modern Express",
-  "ARC-L4 Faint Glen",
-  "ARC-L5 Yellow Core",
-  "CRU-L1 Ambitious Dream",
-  "CRU-L4 Shallow Fields",
-  "CRU-L5 Beautiful Glen",
-  "HUR-L1 Green Glade",
-  "HUR-L2 Faithful Dream",
-  "HUR-L3 Thundering Express",
-  "HUR-L4 Melodic Fields",
-  "HUR-L5 High Course",
-  "MIC-L1 Shallow Frontier",
-  "MIC-L2 Long Forest",
-  "MIC-L3 Endless Odyssey",
-  "MIC-L4 Red Crossroads",
-  "MIC-L5 Modern Icarus",
+  // Stanton - Cities (surface, hangar only)
+  { name: "Lorville", externalPort: false },
+  { name: "Area18", externalPort: false },
+  { name: "New Babbage", externalPort: false },
+  { name: "Orison", externalPort: false },
+
+  // Stanton - Lagrange stations (no external freight elevators)
+  { name: "ARC-L1 Wide Forest", externalPort: false },
+  { name: "ARC-L2 Lively Pathway", externalPort: false },
+  { name: "ARC-L3 Modern Express", externalPort: false },
+  { name: "ARC-L4 Faint Glen", externalPort: false },
+  { name: "ARC-L5 Yellow Core", externalPort: false },
+  { name: "CRU-L1 Ambitious Dream", externalPort: false },
+  { name: "CRU-L4 Shallow Fields", externalPort: false },
+  { name: "CRU-L5 Beautiful Glen", externalPort: false },
+  { name: "HUR-L1 Green Glade", externalPort: false },
+  { name: "HUR-L2 Faithful Dream", externalPort: false },
+  { name: "HUR-L3 Thundering Express", externalPort: false },
+  { name: "HUR-L4 Melodic Fields", externalPort: false },
+  { name: "HUR-L5 High Course", externalPort: false },
+  { name: "MIC-L1 Shallow Frontier", externalPort: false },
+  { name: "MIC-L2 Long Forest", externalPort: false },
+  { name: "MIC-L3 Endless Odyssey", externalPort: false },
+  { name: "MIC-L4 Red Crossroads", externalPort: false },
+  { name: "MIC-L5 Modern Icarus", externalPort: false },
 
   // Gateways
-  "Pyro Gateway",
-  "Nyx Gateway",
-  "Terra Gateway",
-  "Magnus Gateway",
-  "Stanton Gateway (Pyro)",
-  "Nyx Gateway (Pyro)",
-  "Stanton Gateway (Nyx)",
+  { name: "Pyro Gateway", externalPort: false },
+  { name: "Nyx Gateway", externalPort: false },
+  { name: "Terra Gateway", externalPort: false },
+  { name: "Magnus Gateway", externalPort: false },
+  { name: "Stanton Gateway (Pyro)", externalPort: false },
+  { name: "Nyx Gateway (Pyro)", externalPort: false },
+  { name: "Stanton Gateway (Nyx)", externalPort: false },
 
-  // Pyro stations
-  "Ruin Station",
-  "Checkmate",
-  "Orbituary",
-  "Starlight Service Station",
-  "Dudley & Daughters",
-  "Patch City",
-  "Megumi Refueling",
-  "Endgame",
-  "Rod's Fuel 'N Supplies",
+  // Pyro stations (main stations have external freight elevators)
+  { name: "Ruin Station", externalPort: true },
+  { name: "Checkmate", externalPort: true },
+  { name: "Orbituary", externalPort: true },
+  { name: "Starlight Service Station", externalPort: false },
+  { name: "Dudley & Daughters", externalPort: false },
+  { name: "Patch City", externalPort: false },
+  { name: "Megumi Refueling", externalPort: false },
+  { name: "Endgame", externalPort: false },
+  { name: "Rod's Fuel 'N Supplies", externalPort: false },
 
   // Other
-  "Levski",
-  "Security Post Kareah",
+  { name: "Levski", externalPort: true },
+  { name: "Security Post Kareah", externalPort: false },
 ];
+
+export function hasExternalPort(locationName: string): boolean {
+  const loc = LOCATIONS.find((l) => l.name.toLowerCase() === locationName.toLowerCase());
+  return loc?.externalPort ?? false;
+}
