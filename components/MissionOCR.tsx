@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { createWorker } from "tesseract.js";
 import { useHaulerStore, type Leg } from "@/lib/store";
 
@@ -33,7 +33,6 @@ function parseContractText(text: string) {
     reward = Math.max(...candidates);
   }
 
-  // Container size: "X SCU or smaller", "containers X SCU", "at most X SCU"
   let maxContainerSize = 0;
   const containerMatch =
     full.match(/(\d+)\s*SCU\s+or\s+smaller/i) ||
@@ -138,6 +137,15 @@ export function MissionOCR() {
     }
   }, [addMission]);
 
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const file = (e as CustomEvent).detail as File;
+      if (file) processImage(file);
+    };
+    window.addEventListener("ocr-screenshot", handler);
+    return () => window.removeEventListener("ocr-screenshot", handler);
+  }, [processImage]);
+
   const onDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
@@ -170,7 +178,7 @@ export function MissionOCR() {
         Screenshot OCR
       </h3>
       <p className="text-xs text-accent/50 mb-3">
-        Paste (Ctrl+V) or drop a contract screenshot
+        Paste (Ctrl+V), drop, or say "screenshot"
       </p>
 
       <input
