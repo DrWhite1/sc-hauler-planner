@@ -5,134 +5,121 @@ import { useHaulerStore } from "@/lib/store";
 
 declare global {
   interface Window {
-    webkitSpeechRecognition: any;
-    electronAPI?: { sendKey: (key: string) => void };
+    electronAPI?: {
+      sendKey: (key: string) => void;
+      voskStatus: () => Promise<{ ready: boolean; path: string }>;
+      voskInit: () => Promise<{ ok: boolean; error?: string }>;
+      voskAudio: (buffer: ArrayBuffer) => Promise<string | null>;
+      voskFinal: () => Promise<string | null>;
+      downloadModel: () => Promise<{ ok: boolean }>;
+    };
   }
 }
 
-type Status = "unavailable" | "idle" | "listening" | "error";
+type Status = "unavailable" | "idle" | "listening" | "error" | "downloading";
 
 export function VoicePanel() {
   const { voiceCommands, addVoiceCommand, removeVoiceCommand } = useHaulerStore();
   const [status, setStatus] = useState<Status>("idle");
-  const [statusMsg, setStatusMsg] = useState("");
-  const [log, setLog] = useState<string[]>([]);
+  const [statusMsg, setStatusMsg] = useState("Checking model...");
+  const [modelReady, setModelReady] = useState(false);
   const [lastHeard, setLastHeard] = useState("");
   const [lastMatch, setLastMatch] = useState("");
   const [newPhrase, setNewPhrase] = useState("");
   const [newKey, setNewKey] = useState("");
-  const recRef = useRef<any>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
   const listeningRef = useRef(false);
 
-  const addLog = (msg: string) => setLog((l) => [...l.slice(-4), msg]);
-
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    if (!window.webkitSpeechRecognition) {
+    if (!window.electronAPI) {
       setStatus("unavailable");
-      setStatusMsg("Speech recognition not supported in this build");
-      addLog("webkitSpeechRecognition missing");
+      setStatusMsg("Run the desktop app to use voice");
       return;
     }
-    setStatus("idle");
-    setStatusMsg("Ready - click Start and speak");
-    addLog("Recognition available");
+    window.electronAPI.voskStatus().then((s) => {
+      setModelReady(s.ready);
+      setStatus(s.ready ? "idle" : "error");
+      setStatusMsg(s.ready ? "Ready - click Start" : "Model not found - click Download");
+    });
+  }, []);
 
-    const Rec = window.webkitSpeechRecognition;
-    const rec = new Rec();
-    rec.continuous = true;
-    rec.interimResults = true;
-    rec.lang = "en-US";
-
-    rec.onstart = () => {
-      setStatus("listening");
-      setStatusMsg("Listening... speak a command");
-      addLog("onstart");
-    };
-
-    rec.onresult = (e: any) => {
-      const result = e.results[e.results.length - 1];
-      const text = result[0].transcript.toLowerCase().trim();
-      setLastHeard(text);
-      addLog("heard: " + text);
-      if (!result.isFinal) return;
-
-      const match = voiceCommands.find((c) => text.includes(c.phrase.toLowerCase()));
-      if (match) {
-        setLastMatch(match.phrase + " -> " + match.key.toUpperCase());
-        setStatusMsg("Matched: " + match.phrase);
-        if (window.electronAPI && window.electronAPI.sendKey) {
-          window.electronAPI.sendKey(match.key);
-        } else {
-          setStatusMsg("Matched " + match.phrase + " but key sending not available");
-        }
-      } else {
-        setStatusMsg("Heard: " + text + " - no match");
-      }
-    };
-
-    rec.onerror = (e: any) => {
-      const err = e.error || "unknown";
-      setStatus("error");
-      listeningRef.current = false;
-      addLog("onerror: " + err);
-      if (err === "not-allowed") {
-        setStatusMsg("Microphone blocked. Allow mic access for this app in Windows settings.");
-      } else if (err === "network") {
-        setStatusMsg("Network error. Speech recognition needs internet (Google service).");
-      } else if (err === "no-speech") {
-        setStatusMsg("No speech detected. Try again.");
-      } else {
-        setStatusMsg("Error: " + err);
-      }
-    };
-
-    rec.onend = () => {
-      addLog("onend (listening=" + listeningRef.current + ")");
-      if (listeningRef.current) {
-        try { rec.start(); } catch (e) { addLog("restart failed"); }
-      } else {
-        setStatus((s) => (s === "error" ? s : "idle"));
-      }
-    };
-
-    recRef.current = rec;
-    return () => {
-      listeningRef.current = false;
-      try { rec.stop(); } catch (e) {}
-    };
-  }, [voiceCommands]);
-
-  const toggle = () => {
-    if (!recRef.current) return;
-    if (listeningRef.current) {
-      listeningRef.current = false;
-      try { recRef.current.stop(); } catch (e) {}
+  const download = async () => {
+    if (!window.electronAPI) return;
+    setStatus("downloading");
+    setStatusMsg("Downloading model (~40 MB)...");
+    try {
+      await window.electronAPI.downloadModel();
+      setModelReady(true);
       setStatus("idle");
-      setStatusMsg("Stopped");
-      addLog("user stopped");
-    } else {
-      listeningRef.current = true;
-      setStatus("listening");
-      setStatusMsg("Starting...");
-      addLog("calling start()");
-      try {
-        recRef.current.start();
-      } catch (err) {
-        setStatus("error");
-        setStatusMsg("Could not start recognition");
-        listeningRef.current = false;
-        addLog("start() threw");
-      }
+      setStatusMsg("Model ready - click Start");
+    } catch (err) {
+      setStatus("error");
+      setStatusMsg("Download failed: " + String(err));
     }
   };
 
+  const start = async () => {
+    if (!window.electronAPI || !modelReady) return;
+    const init = await window.electronAPI.voskInit();
+    if (!init.ok) {
+      setStatus("error");
+      setStatusMsg("Init failed: " + (init.error || "unknown"));
+      return;
+    }
+
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const ctx = new AudioContext({ sampleRate: 16000 });
+      const source = ctx.createMediaStreamSource(stream);
+      const processor = ctx.createScriptProcessor(4096, 1, 1);
+      processorRef.current = processor;
+
+      processor.onaudioprocess = async (e) => {
+        if (!listeningRef.current) return;
+        const input = e.inputBuffer.getChannelData(0);
+        const buffer = new Int16Array(input.length);
+        for (let i = 0; i < input.length; i++) {
+          buffer[i] = Math.max(-32768, Math.min(32767, input[i] * 32768));
+        }
+        const text = await window.electronAPI!.voskAudio(buffer.buffer);
+        if (text) {
+          setLastHeard(text);
+          const match = voiceCommands.find((c) => text.toLowerCase().includes(c.phrase.toLowerCase()));
+          if (match) {
+            setLastMatch(match.phrase + " -> " + match.key.toUpperCase());
+            setStatusMsg("Matched: " + match.phrase);
+            window.electronAPI!.sendKey(match.key);
+          }
+        }
+      };
+
+      source.connect(processor);
+      processor.connect(ctx.destination);
+      listeningRef.current = true;
+      setStatus("listening");
+      setStatusMsg("Listening... speak a command");
+    } catch (err) {
+      setStatus("error");
+      setStatusMsg("Mic error: " + String(err));
+    }
+  };
+
+  const stop = () => {
+    listeningRef.current = false;
+    processorRef.current?.disconnect();
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    setStatus("idle");
+    setStatusMsg("Stopped");
+  };
+
+  const toggle = () => (listeningRef.current ? stop() : start());
+
   const testKey = () => {
-    if (window.electronAPI && window.electronAPI.sendKey) {
+    if (window.electronAPI) {
       window.electronAPI.sendKey("t");
-      setStatusMsg("Sent test key T - check the focused window");
-    } else {
-      setStatusMsg("Key sending not available - rebuild the desktop app");
+      setStatusMsg("Sent test key T");
     }
   };
 
@@ -146,7 +133,7 @@ export function VoicePanel() {
   const statusColor =
     status === "listening" ? "text-sage" :
     status === "error" ? "text-red-400" :
-    status === "unavailable" ? "text-red-400" : "text-accent/50";
+    status === "downloading" ? "text-gold" : "text-accent/50";
 
   return (
     <div className="panel p-3">
@@ -154,7 +141,7 @@ export function VoicePanel() {
         <h3 className="text-xs font-medium uppercase tracking-wider text-accent/50">Voice</h3>
         <button
           onClick={toggle}
-          disabled={status === "unavailable"}
+          disabled={!modelReady || status === "downloading"}
           className={`text-[10px] px-2 py-0.5 rounded transition ${
             status === "listening"
               ? "bg-sage text-ink"
@@ -169,16 +156,17 @@ export function VoicePanel() {
         <span
           className={`w-2 h-2 rounded-full ${
             status === "listening" ? "bg-sage animate-pulse" :
-            status === "error" || status === "unavailable" ? "bg-red-400" : "bg-accent/30"
+            status === "error" ? "bg-red-400" :
+            status === "downloading" ? "bg-gold" : "bg-accent/30"
           }`}
         />
-        <span>{statusMsg || (status === "idle" ? "Idle" : status)}</span>
+        <span>{statusMsg}</span>
       </div>
 
-      {log.length > 0 && (
-        <div className="text-[9px] text-accent/30 mb-2 font-mono">
-          {log.map((l, i) => <div key={i}>{l}</div>)}
-        </div>
+      {!modelReady && status !== "downloading" && (
+        <button onClick={download} className="text-[10px] mb-2 text-gold hover:underline">
+          Download model (~40 MB)
+        </button>
       )}
 
       {lastHeard && (
@@ -190,10 +178,7 @@ export function VoicePanel() {
         <p className="text-[10px] text-gold mb-2">Last match: {lastMatch}</p>
       )}
 
-      <button
-        onClick={testKey}
-        className="text-[10px] mb-2 text-accent/50 hover:text-accent underline"
-      >
+      <button onClick={testKey} className="text-[10px] mb-2 text-accent/50 hover:text-accent underline">
         Test key send (T)
       </button>
 
