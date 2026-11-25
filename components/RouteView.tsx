@@ -17,7 +17,7 @@ export function RouteView() {
 
   if (!selectedShip) {
     return (
-      <div className="rounded-lg border border-dashed border-elevated p-8 text-center text-accent/40">
+      <div className="panel p-8 text-center text-accent/40 text-sm">
         Select a ship to calculate routes
       </div>
     );
@@ -25,7 +25,7 @@ export function RouteView() {
 
   if (!route) {
     return (
-      <div className="rounded-lg border border-dashed border-elevated p-8 text-center text-accent/40">
+      <div className="panel p-8 text-center text-accent/40 text-sm">
         Add missions to see an optimized route
       </div>
     );
@@ -34,55 +34,65 @@ export function RouteView() {
   const overPeak = route.peakScu > selectedShip.scu;
 
   return (
-    <div className="rounded-lg border border-elevated bg-elevated/50 p-4">
-      <h2 className="text-lg font-semibold mb-4">
-        Optimized Route
+    <div className="panel p-5">
+      <div className="flex items-baseline justify-between mb-4">
+        <h2 className="text-base font-semibold tracking-tight">
+          Optimized Route
+        </h2>
         {currentLocation && (
-          <span className="text-sm font-normal text-accent/50 ml-2">
-            from {currentLocation}
-          </span>
+          <span className="text-xs text-accent/40">from {currentLocation}</span>
         )}
-      </h2>
+      </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 text-sm">
-        <div>
-          <div className="text-accent/50 text-xs">Total Profit</div>
-          <div className="text-gold font-medium">{route.totalReward.toLocaleString()} aUEC</div>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-5">
+        <div className="stat">
+          <div className="text-[10px] uppercase tracking-wider text-accent/40">Profit</div>
+          <div className="text-gold font-semibold mt-0.5">{route.totalReward.toLocaleString()}</div>
+          <div className="text-[9px] text-accent/30">aUEC</div>
         </div>
-        <div>
-          <div className="text-accent/50 text-xs">Peak Cargo</div>
-          <div className={overPeak ? "text-red-400" : "text-sage"}>
-            {route.peakScu} / {selectedShip.scu} SCU
+        <div className="stat">
+          <div className="text-[10px] uppercase tracking-wider text-accent/40">Peak Cargo</div>
+          <div className={`font-semibold mt-0.5 ${overPeak ? "text-red-400" : "text-sage"}`}>
+            {route.peakScu} <span className="text-accent/40 font-normal">/ {selectedShip.scu}</span>
           </div>
-          <div className="text-[10px] text-accent/40">Total moved: {route.totalScu}</div>
+          <div className="text-[9px] text-accent/30">SCU</div>
         </div>
-        <div>
-          <div className="text-accent/50 text-xs">Stops</div>
-          <div>{route.stops.length}</div>
+        <div className="stat">
+          <div className="text-[10px] uppercase tracking-wider text-accent/40">Stops</div>
+          <div className="font-semibold mt-0.5">{route.stops.length}</div>
         </div>
-        <div>
-          <div className="text-accent/50 text-xs">Est. aUEC/hr</div>
-          <div className="text-gold">{Math.round(route.auecPerHour).toLocaleString()}</div>
-          <div className="text-[10px] text-accent/40">~{Math.round(route.estimatedMinutes)} min</div>
+        <div className="stat">
+          <div className="text-[10px] uppercase tracking-wider text-accent/40">aUEC/hr</div>
+          <div className="text-gold font-semibold mt-0.5">{Math.round(route.auecPerHour).toLocaleString()}</div>
+          <div className="text-[9px] text-accent/30">~{Math.round(route.estimatedMinutes)} min</div>
         </div>
       </div>
 
-      <ol className="space-y-2 text-sm">
+      <ol className="space-y-1">
         {route.stops.map((stop, i) => (
-          <li key={i} className="flex gap-3">
-            <span className="w-6 text-accent/40">{i + 1}.</span>
-            <span className={stop.type === "pickup" ? "text-sage" : "text-gold"}>
-              {stop.type === "pickup" ? "Pickup" : "Deliver"} · {stop.location}
+          <li
+            key={i}
+            className="flex items-center gap-3 text-sm py-1.5 px-2 rounded-md hover:bg-ink/40 transition"
+          >
+            <span className="w-5 text-[11px] text-accent/30 tabular-nums">{i + 1}</span>
+            <span
+              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                stop.type === "pickup" ? "bg-sage" : "bg-gold"
+              }`}
+            />
+            <span className={stop.type === "pickup" ? "text-sage" : "text-gold/90"}>
+              {stop.type === "pickup" ? "Pickup" : "Deliver"}
             </span>
-            <span className="ml-auto text-xs text-accent/50">
-              {stop.type === "pickup" ? "+" : "-"}{stop.scu} → {stop.cargoAfter} SCU
+            <span className="text-accent/70 truncate">{stop.location}</span>
+            <span className="ml-auto text-[11px] text-accent/40 tabular-nums">
+              {stop.type === "pickup" ? "+" : "−"}{stop.scu} → {stop.cargoAfter}
             </span>
           </li>
         ))}
       </ol>
 
       {overPeak && (
-        <p className="mt-4 text-sm text-red-400">
+        <p className="mt-4 text-xs text-red-400 bg-red-950/30 rounded px-3 py-2">
           Peak cargo ({route.peakScu} SCU) exceeds ship capacity. Deliver earlier or split the run.
         </p>
       )}
