@@ -55,14 +55,14 @@ function toAhkKey(combo) {
   const mods = [];
   let key = "";
   for (const p of parts) {
-    if (p === "alt") mods.push("!");
-    else if (p === "ctrl" || p === "control") mods.push("^");
-    else if (p === "shift") mods.push("+");
-    else if (p === "win" || p === "windows") mods.push("#");
+    if (p === "alt") mods.push("Alt");
+    else if (p === "ctrl" || p === "control") mods.push("Ctrl");
+    else if (p === "shift") mods.push("Shift");
+    else if (p === "win" || p === "windows") mods.push("LWin");
     else key = p;
   }
   if (!key) return null;
-  return { mods: mods.join(""), key };
+  return { mods, key };
 }
 
 function sendKey(key, duration) {
@@ -73,9 +73,22 @@ function sendKey(key, duration) {
   }
 
   const hold = Math.max(0, parseInt(duration, 10) || 0);
-  const ahkSend = hold > 0
-    ? `Send "${parsed.mods}{${parsed.key} down}"\nSleep ${hold}\nSend "${parsed.mods}{${parsed.key} up}"`
-    : `Send "${parsed.mods}${parsed.key}"`;
+  let ahkSend;
+
+  if (hold > 0) {
+    const downMods = parsed.mods.map((m) => `Send "{${m} down}"`).join("\n");
+    const upMods = parsed.mods.map((m) => `Send "{${m} up}"`).join("\n");
+    ahkSend = `${downMods}\nSend "{${parsed.key} down}"\nSleep ${hold}\nSend "{${parsed.key} up}"\n${upMods}`;
+  } else {
+    const modPrefix = parsed.mods.map((m) => {
+      if (m === "Alt") return "!";
+      if (m === "Ctrl") return "^";
+      if (m === "Shift") return "+";
+      if (m === "LWin") return "#";
+      return "";
+    }).join("");
+    ahkSend = `Send "${modPrefix}${parsed.key}"`;
+  }
 
   if (process.platform !== "win32") {
     const xdo = key.toLowerCase();
