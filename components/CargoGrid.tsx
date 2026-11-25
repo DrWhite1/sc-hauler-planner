@@ -10,7 +10,7 @@ import { packGrid } from "@/lib/packer";
 const COLORS = ["#6f9e86", "#c5a46e", "#7a9cc6", "#b07a7a", "#9a8ab0", "#8ab0a0"];
 
 export function CargoGrid() {
-  const { missions, selectedShip, currentLocation } = useHaulerStore();
+  const { missions, selectedShip, currentLocation, completedStops } = useHaulerStore();
 
   const route = useMemo(
     () =>
@@ -22,19 +22,35 @@ export function CargoGrid() {
 
   const placed = useMemo(() => {
     if (!route || !selectedShip) return [];
-    const packing = buildPackingOrder(route.stops, missions, selectedShip.maxContainer);
-    const grid = getGrid(selectedShip.id);
-    return packGrid(packing, grid);
-  }, [route, missions, selectedShip]);
 
-  if (!selectedShip || !route || placed.length === 0) return null;
+    // Only show cargo that has been picked up and not yet delivered
+    const onBoard = new Set<string>();
+    for (const stop of route.stops) {
+      const key = `${stop.missionId}:${stop.type}:${stop.location}`;
+      if (stop.type === "pickup" && completedStops.includes(key)) {
+        onBoard.add(stop.missionId + ":" + stop.location);
+      }
+      if (stop.type === "dropoff" && completedStops.includes(key)) {
+        onBoard.delete(stop.missionId + ":" + stop.location);
+      }
+    }
+
+    const packing = buildPackingOrder(route.stops, missions, selectedShip.maxContainer);
+    const loaded = packing.filter((p) => onBoard.has(p.missionId + ":" + p.location));
+
+    if (loaded.length === 0) return [];
+
+    const grid = getGrid(selectedShip.id);
+    return packGrid(loaded, grid);
+  }, [route, missions, selectedShip, completedStops]);
+
+  if (!selectedShip || !route) return null;
 
   const grid = getGrid(selectedShip.id);
   const cell = 14;
   const width = grid.cols * cell;
   const height = grid.rows * cell;
 
-  // Assign colors by mission
   const missionColors = new Map<string, string>();
   let colorIdx = 0;
   for (const p of placed) {
@@ -44,16 +60,20 @@ export function CargoGrid() {
     }
   }
 
+  const onBoardScu = placed.reduce((sum, p) => sum + p.item.scu, 0);
+
   return (
     <div className="rounded-lg border border-elevated bg-elevated/50 p-4 mt-4">
       <h3 className="text-sm font-medium uppercase tracking-wider text-accent/60 mb-2">
         Cargo Grid — {selectedShip.name}
       </h3>
-      <p className="text-[10px] text-accent/40 mb-3">Door → right side · first delivery nearest the door</p>
+      <p className="text-[10px] text-accent/40 mb-3">
+        Door → right · currently on board: {onBoardScu} SCU
+        {placed.length === 0 && " (check off pickups to load)"}
+      </p>
 
       <div className="overflow-auto">
         <svg width={width} height={height} className="bg-ink rounded border border-elevated">
-          {/* Grid lines */}
           {Array.from({ length: grid.cols + 1 }).map((_, i) => (
             <line key={`v${i}`} x1={i * cell} y1={0} x2={i * cell} y2={height} stroke="#1a1f26" strokeWidth="1" />
           ))}
@@ -61,7 +81,6 @@ export function CargoGrid() {
             <line key={`h${i}`} x1={0} y1={i * cell} x2={width} y2={i * cell} stroke="#1a1f26" strokeWidth="1" />
           ))}
 
-          {/* Placed boxes */}
           {placed.map((p, i) => (
             <g key={i}>
               <rect
@@ -89,17 +108,19 @@ export function CargoGrid() {
         </svg>
       </div>
 
-      <div className="mt-3 flex flex-wrap gap-2 text-[10px]">
-        {Array.from(missionColors.entries()).map(([id, color]) => {
-          const m = missions.find((x) => x.id === id);
-          return (
-            <span key={id} className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-sm" style={{ background: color }} />
-              {m?.pickup.slice(0, 20) || "Mission"}
-            </span>
-          );
-        })}
-      </div>
+      {placed.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2 text-[10px]">
+          {Array.from(missionColors.entries()).map(([id, color]) => {
+            const m = missions.find((x) => x.id === id);
+            return (
+              <span key={id} className="flex items-center gap-1">
+                <span className="w-2 h-2 rounded-sm" style={{ background: color }} />
+                {m?.pickup.slice(0, 20) || "Mission"}
+              </span>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
