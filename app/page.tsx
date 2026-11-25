@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { ShipSelector } from "@/components/ShipSelector";
 import { LocationSelector } from "@/components/LocationSelector";
+import { ProgressionTracker } from "@/components/ProgressionTracker";
 import { MissionForm } from "@/components/MissionForm";
 import { MissionOCR } from "@/components/MissionOCR";
 import { RouteView } from "@/components/RouteView";
@@ -33,6 +34,7 @@ export default function Home() {
         <div className="md:col-span-1 space-y-6">
           <ShipSelector />
           <LocationSelector />
+          <ProgressionTracker />
           <MissionOCR />
           <MissionForm />
         </div>
