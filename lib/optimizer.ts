@@ -19,7 +19,6 @@ export type PlannedRoute = {
 
 function getLegs(mission: Mission): Leg[] {
   if (mission.legs && mission.legs.length > 0) return mission.legs;
-  // Fallback to single pickup + dropoff
   return [
     { type: "pickup", location: mission.pickup, scu: mission.scu },
     { type: "dropoff", location: mission.dropoff, scu: mission.scu },
@@ -27,12 +26,8 @@ function getLegs(mission: Mission): Leg[] {
 }
 
 function isValidOrder(stops: Stop[]): boolean {
-  const picked = new Set<string>();
   for (const s of stops) {
-    if (s.type === "pickup") {
-      picked.add(s.missionId + s.location);
-    } else {
-      // Dropoff only allowed after at least one pickup for this mission
+    if (s.type === "dropoff") {
       const hasPickup = stops
         .slice(0, stops.indexOf(s))
         .some((p) => p.missionId === s.missionId && p.type === "pickup");
@@ -42,18 +37,35 @@ function isValidOrder(stops: Stop[]): boolean {
   return true;
 }
 
-function scoreRoute(stops: Stop[], totalReward: number): number {
+function locationSimilarity(a: string, b: string): number {
+  if (!a || !b) return 0;
+  const al = a.toLowerCase();
+  const bl = b.toLowerCase();
+  if (al === bl) return 100;
+  if (al.includes(bl) || bl.includes(al)) return 60;
+  // Shared tokens (e.g. "Station", planet names)
+  const aTokens = al.split(/\s+/);
+  const bTokens = bl.split(/\s+/);
+  const shared = aTokens.filter((t) => bTokens.includes(t) && t.length > 3).length;
+  return shared * 20;
+}
+
+function scoreRoute(stops: Stop[], totalReward: number, startLocation: string): number {
   if (!isValidOrder(stops)) return -Infinity;
 
-  // Prefer fewer unique locations (less backtracking)
   const uniqueLocs = new Set(stops.map((s) => s.location)).size;
   const backtrackPenalty = (stops.length - uniqueLocs) * 15;
 
-  // Rough time estimate
+  // Bonus if first stop is close to current location
+  let startBonus = 0;
+  if (startLocation && stops.length > 0) {
+    startBonus = locationSimilarity(stops[0].location, startLocation) * 2;
+  }
+
   const estimatedMinutes = Math.max(15, stops.length * 10 + uniqueLocs * 5);
   const auecPerHour = (totalReward / estimatedMinutes) * 60;
 
-  return auecPerHour - backtrackPenalty;
+  return auecPerHour - backtrackPenalty + startBonus;
 }
 
 function mutate(stops: Stop[]): Stop[] {
@@ -65,11 +77,14 @@ function mutate(stops: Stop[]): Stop[] {
   return next;
 }
 
-export function planRoute(missions: Mission[], ship: Ship): PlannedRoute {
+export function planRoute(
+  missions: Mission[],
+  ship: Ship,
+  currentLocation: string = ""
+): PlannedRoute {
   const totalReward = missions.reduce((sum, m) => sum + m.reward, 0);
   const totalScu = missions.reduce((sum, m) => sum + m.scu, 0);
 
-  // Build initial stop list from all legs
   const baseStops: Stop[] = [];
   for (const m of missions) {
     for (const leg of getLegs(m)) {
@@ -87,7 +102,6 @@ export function planRoute(missions: Mission[], ship: Ship): PlannedRoute {
     return { stops: [], totalReward, totalScu, auecPerHour: 0, distanceScore: 0 };
   }
 
-  // Simple GA: population of shuffled routes, keep best valid ones
   const populationSize = 40;
   const generations = 30;
   let population: Stop[][] = [];
@@ -97,11 +111,11 @@ export function planRoute(missions: Mission[], ship: Ship): PlannedRoute {
   }
 
   let best = population[0];
-  let bestScore = scoreRoute(best, totalReward);
+  let bestScore = scoreRoute(best, totalReward, currentLocation);
 
   for (let g = 0; g < generations; g++) {
     const scored = population
-      .map((route) => ({ route, score: scoreRoute(route, totalReward) }))
+      .map((route) => ({ route, score: scoreRoute(route, totalReward, currentLocation) }))
       .sort((a, b) => b.score - a.score);
 
     if (scored[0].score > bestScore) {
@@ -109,7 +123,6 @@ export function planRoute(missions: Mission[], ship: Ship): PlannedRoute {
       bestScore = scored[0].score;
     }
 
-    // Keep top half, mutate the rest
     const survivors = scored.slice(0, Math.floor(populationSize / 2)).map((s) => s.route);
     const next: Stop[][] = [...survivors];
     while (next.length < populationSize) {
