@@ -3,6 +3,7 @@
 import { useMemo } from "react";
 import { useHaulerStore } from "@/lib/store";
 import { planRoute } from "@/lib/optimizer";
+import { hasExternalPort } from "@/lib/locations";
 
 export function RouteView() {
   const { missions, selectedShip, currentLocation } = useHaulerStore();
@@ -69,26 +70,34 @@ export function RouteView() {
       </div>
 
       <ol className="space-y-1">
-        {route.stops.map((stop, i) => (
-          <li
-            key={i}
-            className="flex items-center gap-3 text-sm py-1.5 px-2 rounded-md hover:bg-ink/40 transition"
-          >
-            <span className="w-5 text-[11px] text-accent/30 tabular-nums">{i + 1}</span>
-            <span
-              className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
-                stop.type === "pickup" ? "bg-sage" : "bg-gold"
-              }`}
-            />
-            <span className={stop.type === "pickup" ? "text-sage" : "text-gold/90"}>
-              {stop.type === "pickup" ? "Pickup" : "Deliver"}
-            </span>
-            <span className="text-accent/70 truncate">{stop.location}</span>
-            <span className="ml-auto text-[11px] text-accent/40 tabular-nums">
-              {stop.type === "pickup" ? "+" : "−"}{stop.scu} → {stop.cargoAfter}
-            </span>
-          </li>
-        ))}
+        {route.stops.map((stop, i) => {
+          const ext = hasExternalPort(stop.location);
+          return (
+            <li
+              key={i}
+              className="flex items-center gap-3 text-sm py-1.5 px-2 rounded-md hover:bg-ink/40 transition"
+            >
+              <span className="w-5 text-[11px] text-accent/30 tabular-nums">{i + 1}</span>
+              <span
+                className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                  stop.type === "pickup" ? "bg-sage" : "bg-gold"
+                }`}
+              />
+              <span className={stop.type === "pickup" ? "text-sage" : "text-gold/90"}>
+                {stop.type === "pickup" ? "Pickup" : "Deliver"}
+              </span>
+              <span className="text-accent/70 truncate">{stop.location}</span>
+              {ext && (
+                <span className="text-[9px] px-1.5 py-0.5 rounded bg-sage/20 text-sage border border-sage/30">
+                  EXT
+                </span>
+              )}
+              <span className="ml-auto text-[11px] text-accent/40 tabular-nums">
+                {stop.type === "pickup" ? "+" : "−"}{stop.scu} → {stop.cargoAfter}
+              </span>
+            </li>
+          );
+        })}
       </ol>
 
       {overPeak && (
