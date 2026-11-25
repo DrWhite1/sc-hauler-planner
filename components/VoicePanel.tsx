@@ -173,7 +173,7 @@ export function VoicePanel() {
         {voiceCommands.map((c) => (
           <li key={c.id} className="flex justify-between items-center">
             <span>
-              {c.phrase} -> <span className="text-gold">{c.key.toUpperCase()}</span>
+              {c.phrase} {"->"} <span className="text-gold">{c.key.toUpperCase()}</span>
             </span>
             <button onClick={() => removeVoiceCommand(c.id)} className="text-red-400/60 text-[10px]">x</button>
           </li>
