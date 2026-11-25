@@ -141,6 +141,38 @@ function lev(a: string, b: string): number {
   return dp[a.length][b.length];
 }
 
+const BOX_SIZES = [1, 2, 4, 8, 16, 24, 32];
+
+// Largest container the contract allows. Contract briefings phrase it as e.g.
+// "a ship that can handle 4 SCU cargo containers", "can hold 2 SCU cargo containers",
+// or "Max container size: 16 SCU". Returns undefined when the text does not say.
+export function parseMaxContainerSize(full: string): number | undefined {
+  const patterns = [
+    /(?:handle|hold|carry|fit|take|accept|accommodate|support)s?\s+(?:up\s+to\s+)?(\d{1,2})\s*SCU\s+(?:cargo\s+)?(?:containers?|boxes|crates)/i,
+    /(?:max(?:imum)?|largest)\.?\s+(?:cargo\s+)?(?:container|box|crate)(?:\s+size)?\s*(?:of|is|:)?\s*(\d{1,2})\s*SCU/i,
+    /(\d{1,2})\s*SCU\s+(?:cargo\s+)?(?:containers?|boxes|crates)\s+(?:max(?:imum)?|or\s+smaller|or\s+less)/i,
+  ];
+  for (const re of patterns) {
+    const m = full.match(re);
+    if (m) {
+      const v = parseInt(m[1], 10);
+      if (BOX_SIZES.includes(v)) return v;
+    }
+  }
+  return undefined;
+}
+
+// Max container size across several OCR reads of one screenshot: the value most reads agree on.
+// A tie between different values is an unreliable read, so it stays unknown (the planner then
+// falls back to the ship's max container size and marks it as assumed).
+export function voteMaxContainerSize(reads: { maxContainerSize?: number }[]): number | undefined {
+  const votes = new Map<number, number>();
+  for (const r of reads) if (r.maxContainerSize) votes.set(r.maxContainerSize, (votes.get(r.maxContainerSize) ?? 0) + 1);
+  const ranked = [...votes.entries()].sort((a, b) => b[1] - a[1]);
+  if (!ranked.length || (ranked[1] && ranked[1][1] === ranked[0][1])) return undefined;
+  return ranked[0][0];
+}
+
 export type Delivery = { commodity: string; location: string; scu: number; locationRaw?: string };
 export type Collection = { commodity: string; location: string; scu: number; locationRaw?: string };
 
@@ -152,6 +184,7 @@ function finalize(
     suggestedPickup: string | null;
     expectedDelivers?: number;
     expectedCollects?: number;
+    maxContainerSize?: number;
   },
   delivers: Delivery[],
   collects: Collection[],
@@ -233,7 +266,7 @@ function finalize(
     expectedDelivers: base.expectedDelivers ?? 0,
     suggestedUsed,
     complete,
-    maxContainerSize: undefined as number | undefined,
+    maxContainerSize: base.maxContainerSize as number | undefined,
     lines: base.lines,
   };
 }
@@ -312,7 +345,15 @@ export function parseContractText(rawText: string, knownLocations: string[] = []
   const expectedDelivers = (full.match(/\bdeliver\s*[0-9OoIl]+\s*\/\s*[0-9OoIl]+/gi) ?? []).length;
   const expectedCollects = (text.match(/(?:^|\n)[^A-Za-z0-9\n]*collect\b/gi) ?? []).length;
   return finalize(
-    { reward, corporation, lines: text.split(/\n+/), suggestedPickup, expectedDelivers, expectedCollects },
+    {
+      reward,
+      corporation,
+      lines: text.split(/\n+/),
+      suggestedPickup,
+      expectedDelivers,
+      expectedCollects,
+      maxContainerSize: parseMaxContainerSize(full),
+    },
     delivers,
     collects
   );
@@ -329,7 +370,14 @@ export function applySuggestedPickups(r: ParsedContract): ParsedContract {
   }
   const delivers = r.delivers.map((d) => ({ ...d }));
   return finalize(
-    { reward: r.reward, corporation: r.corporation, lines: r.lines, suggestedPickup: r.suggestedPickup, expectedDelivers: r.delivers.length },
+    {
+      reward: r.reward,
+      corporation: r.corporation,
+      lines: r.lines,
+      suggestedPickup: r.suggestedPickup,
+      expectedDelivers: r.delivers.length,
+      maxContainerSize: r.maxContainerSize,
+    },
     delivers,
     collects,
     true
@@ -374,8 +422,11 @@ export function pickConsensus(reads: ParsedContract[]): Consensus {
     groups.set(k, [...(groups.get(k) ?? []), r]);
   }
   const best = [...groups.values()].sort((a, b) => b.length - a.length)[0];
-  if (best.length >= 2) return { chosen: best[0], state: "agreed", detail: "" };
-  if (reads.length === 1 && groups.size === 1) return { chosen: best[0], state: "single", detail: "" };
+  // The briefing sentence with the max container size may only be legible in some passes.
+  const withMax = (r: ParsedContract): ParsedContract =>
+    r.maxContainerSize ? r : { ...r, maxContainerSize: voteMaxContainerSize(reads) };
+  if (best.length >= 2) return { chosen: withMax(best[0]), state: "agreed", detail: "" };
+  if (reads.length === 1 && groups.size === 1) return { chosen: withMax(best[0]), state: "single", detail: "" };
   const parts = [...groups.values()].map((g) => g[0].delivers.map((d) => `${d.commodity} ${d.scu}`).join(", "));
   return { chosen: null, state: "conflict", detail: parts.join(" vs ") };
 }
@@ -473,6 +524,7 @@ export function mergeReads(reads: ParsedContract[]): Merged {
       corporation: base.corporation,
       lines: base.lines,
       suggestedPickup: base.suggestedPickup,
+      maxContainerSize: voteMaxContainerSize(reads),
     },
     delivers,
     collects

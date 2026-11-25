@@ -314,6 +314,10 @@ export function MissionOCR() {
               Deliver {d.scu} SCU {d.commodity} to {d.location}
             </div>
           ))}
+          <div className="text-accent/50">
+            Max container:{" "}
+            {parsed.maxContainerSize ? `${parsed.maxContainerSize} SCU` : "not found (set it in Edit, else the ship max is used)"}
+          </div>
         </div>
       )}
 

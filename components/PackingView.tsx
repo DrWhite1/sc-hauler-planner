@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useHaulerStore } from "@/lib/store";
 import { planRoute } from "@/lib/optimizer";
 import { buildPackingOrder } from "@/lib/packing";
+import { formatBreakdown } from "@/lib/containers";
 
 export function PackingView() {
   const { missions, selectedShip, currentLocation } = useHaulerStore();
@@ -38,12 +39,21 @@ export function PackingView() {
               <span className="text-accent/40">{item.loadOrder}.</span>{" "}
               {item.commodity || "Cargo"} from {item.location}
             </span>
-            <span className="text-accent/50">
-              {item.scu} SCU · {item.containerSize} SCU boxes
+            <span
+              className="text-accent/50 text-right tabular-nums"
+              title={`Largest box ${item.containerSize} SCU${item.containerAssumed ? " (assumed: mission max not set)" : ""}`}
+            >
+              {item.scu} SCU · {formatBreakdown(item.boxes)}
+              {item.containerAssumed && <span className="text-accent/30">*</span>}
             </span>
           </li>
         ))}
       </ol>
+      {packing.some((p) => p.containerAssumed) && (
+        <p className="text-[10px] text-accent/35 mt-2">
+          * max container size not set on the mission, assumed {selectedShip?.maxContainer ?? 32} SCU (ship max)
+        </p>
+      )}
     </div>
   );
 }

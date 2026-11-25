@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useHaulerStore } from "@/lib/store";
+import { STANDARD_CONTAINERS } from "@/lib/containers";
 
 export function MissionForm() {
   const addMission = useHaulerStore((s) => s.addMission);
@@ -97,13 +98,19 @@ export function MissionForm() {
         />
       </div>
 
-      <input
-        type="number"
-        placeholder="Max container size (SCU)"
+      <select
         value={form.maxContainerSize}
         onChange={(e) => setForm({ ...form, maxContainerSize: e.target.value })}
         className="w-full rounded bg-ink border border-elevated px-2 py-1.5 text-sm"
-      />
+        title="Largest container the contract allows"
+      >
+        <option value="">Max container size: unknown (use ship max)</option>
+        {STANDARD_CONTAINERS.map((s) => (
+          <option key={s} value={s}>
+            Max container size: {s} SCU
+          </option>
+        ))}
+      </select>
 
       <button
         type="submit"

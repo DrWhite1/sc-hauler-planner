@@ -1,4 +1,11 @@
-import { parseContractText as parse, applySuggestedPickups, pickConsensus, mergeReads } from "../lib/parseContract.ts";
+import {
+  parseContractText as parse,
+  applySuggestedPickups,
+  pickConsensus,
+  mergeReads,
+  parseMaxContainerSize,
+  voteMaxContainerSize,
+} from "../lib/parseContract.ts";
 import { LOCATIONS } from "../lib/locations.ts";
 
 const known = LOCATIONS.map((l) => l.name);
@@ -83,6 +90,7 @@ assert.equal(r.pickup, "MIC-L5 Modern Icarus");
 assert.equal(r.dropoff, "NB Int. Spaceport");
 assert.equal(r.complete, true);
 assert.equal(r.collects[0].scu, 6);
+assert.equal(r.maxContainerSize, 4); // "have a ship that can handle 4 SCU cargo containers"
 
 r = parseContractText(t2);
 console.log("T2 (as pasted)", JSON.stringify({ reward: r.reward, scu: r.totalScu, pickup: r.pickup, dropoff: r.dropoff, collects: r.collects, delivers: r.delivers, missing: r.missingPickups, complete: r.complete }));
@@ -98,6 +106,7 @@ assert.deepEqual(r.collects.map((c) => [c.location, c.scu]), [
 ]);
 assert.deepEqual(r.missingPickups, ["stims"]);
 assert.equal(r.complete, false);
+assert.equal(r.maxContainerSize, 2); // "a ship that can hold 2 SCU cargo containers" (split over lines)
 
 r = parseContractText(t2full);
 console.log("T2 (Stims line readable)", JSON.stringify({ pickup: r.pickup, scu: r.totalScu, collects: r.collects.map((c) => [c.commodity, c.location, c.scu]), complete: r.complete }));
@@ -106,6 +115,7 @@ assert.deepEqual(r.collects.map((c) => c.scu), [2, 1, 4, 2]);
 assert.equal(r.collects[3].location, "HDMS-Oparei");
 assert.equal(r.complete, true);
 assert.equal(r.totalScu, 9);
+assert.equal(r.maxContainerSize, 2);
 
 
 // ---- Covalex "Junior Rank - Direct Medium Cargo Haul" (in-game contracts screen, 2026-11-25) ----
@@ -289,4 +299,40 @@ Collect Souvenirs from Shubin Mining Facility SMCa-`, known);
   const lone = parse(`Deliver 0/2 SCU of Stims to Sunset Mesa on Pyro II.\nCollect Stims from ArcCorp Mining Area 141.\nDeliver 0/9 SCU of Gold to Seraphim Station.`, known);
   assert.equal(mergeReads([lone, lone]).chosen, null);
 }
+// ---- Max container size (box-size breakdown) ----
+assert.equal(parseMaxContainerSize("Max container size: 16 SCU"), 16);
+assert.equal(parseMaxContainerSize("maximum container size of 8 SCU"), 8);
+assert.equal(parseMaxContainerSize("a ship that can carry up to 32 SCU containers"), 32);
+assert.equal(parseMaxContainerSize("Deliver 0/76 SCU of Steel to Port Tressler"), undefined);
+assert.equal(parseMaxContainerSize("can handle 5 SCU cargo containers"), undefined); // not a box size
+assert.equal(voteMaxContainerSize([{ maxContainerSize: 8 }, {}, { maxContainerSize: 8 }, { maxContainerSize: 4 }]), 8);
+assert.equal(voteMaxContainerSize([{ maxContainerSize: 8 }, { maxContainerSize: 4 }]), undefined); // tie = unknown
+assert.equal(voteMaxContainerSize([{}, {}]), undefined);
+{
+  // Survives "use suggested pickup" (re-finalized contract keeps it)
+  const noCollect = parseContractText(`Reward 57,750
+Hi, A freight elevator at Lively Pathway Station at ArcCorp's L2 Lagrange point has some cargo.
+You will need a ship that can handle 16 SCU cargo containers.
+Deliver 0/37 SCU of Aluminum to Seraphim Station above Crusader.`);
+  assert.equal(noCollect.maxContainerSize, 16);
+  assert.equal(applySuggestedPickups(noCollect).maxContainerSize, 16);
+
+  // Consensus: chosen read lacks the briefing sentence, another pass read it
+  const body = `Reward 20,000\nDeliver 0/76 SCU of Steel to Seraphim Station.\nCollect Steel from Port Tressler.`;
+  const withBrief = parseContractText(body + "\nHave a ship that can handle 8 SCU cargo containers.");
+  const without = parseContractText(body);
+  assert.equal(without.maxContainerSize, undefined);
+  const cons = pickConsensus([without, withBrief]);
+  assert.equal(cons.state, "agreed");
+  assert.equal(cons.chosen.maxContainerSize, 8);
+
+  // Voting merge keeps the voted max container size
+  const a = parseContractText(`Deliver 0/2 SCU of Stims to Sunset Mesa on Pyro II.\nCollect Stims from ArcCorp Mining Area 141.\nA ship that can hold 2 SCU cargo containers.`);
+  const b = parseContractText(`Deliver 0/2 SCU of Stims to Sunset Mesa on Pyro II.\nCollect Stims from ArcCorp Mining Area 141.`);
+  const c = parseContractText(`Deliver 0/2 SCU of Stims to Sunset Mesa on Pyro II.\nCollect Stims from ArcCorp Mining Area 141.\nA ship that can hold 2 SCU cargo containers.`);
+  const merged = mergeReads([a, b, c]);
+  assert.ok(merged.chosen && merged.chosen.complete, merged.detail);
+  assert.equal(merged.chosen.maxContainerSize, 2);
+}
+
 console.log("ALL TESTS PASSED");
