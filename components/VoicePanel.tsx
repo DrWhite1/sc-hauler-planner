@@ -16,6 +16,7 @@ export function VoicePanel() {
   const { voiceCommands, addVoiceCommand, removeVoiceCommand } = useHaulerStore();
   const [status, setStatus] = useState<Status>("idle");
   const [statusMsg, setStatusMsg] = useState("");
+  const [log, setLog] = useState<string[]>([]);
   const [lastHeard, setLastHeard] = useState("");
   const [lastMatch, setLastMatch] = useState("");
   const [newPhrase, setNewPhrase] = useState("");
@@ -23,15 +24,19 @@ export function VoicePanel() {
   const recRef = useRef<any>(null);
   const listeningRef = useRef(false);
 
+  const addLog = (msg: string) => setLog((l) => [...l.slice(-4), msg]);
+
   useEffect(() => {
     if (typeof window === "undefined") return;
     if (!window.webkitSpeechRecognition) {
       setStatus("unavailable");
       setStatusMsg("Speech recognition not supported in this build");
+      addLog("webkitSpeechRecognition missing");
       return;
     }
     setStatus("idle");
     setStatusMsg("Ready - click Start and speak");
+    addLog("Recognition available");
 
     const Rec = window.webkitSpeechRecognition;
     const rec = new Rec();
@@ -42,12 +47,14 @@ export function VoicePanel() {
     rec.onstart = () => {
       setStatus("listening");
       setStatusMsg("Listening... speak a command");
+      addLog("onstart");
     };
 
     rec.onresult = (e: any) => {
       const result = e.results[e.results.length - 1];
       const text = result[0].transcript.toLowerCase().trim();
       setLastHeard(text);
+      addLog("heard: " + text);
       if (!result.isFinal) return;
 
       const match = voiceCommands.find((c) => text.includes(c.phrase.toLowerCase()));
@@ -68,6 +75,7 @@ export function VoicePanel() {
       const err = e.error || "unknown";
       setStatus("error");
       listeningRef.current = false;
+      addLog("onerror: " + err);
       if (err === "not-allowed") {
         setStatusMsg("Microphone blocked. Allow mic access for this app in Windows settings.");
       } else if (err === "network") {
@@ -80,11 +88,11 @@ export function VoicePanel() {
     };
 
     rec.onend = () => {
+      addLog("onend (listening=" + listeningRef.current + ")");
       if (listeningRef.current) {
-        try { rec.start(); } catch (e) {}
+        try { rec.start(); } catch (e) { addLog("restart failed"); }
       } else {
         setStatus((s) => (s === "error" ? s : "idle"));
-        setStatusMsg((m) => (m.startsWith("Error") || m.startsWith("Microphone") || m.startsWith("Network") ? m : "Stopped"));
       }
     };
 
@@ -102,16 +110,19 @@ export function VoicePanel() {
       try { recRef.current.stop(); } catch (e) {}
       setStatus("idle");
       setStatusMsg("Stopped");
+      addLog("user stopped");
     } else {
       listeningRef.current = true;
       setStatus("listening");
       setStatusMsg("Starting...");
+      addLog("calling start()");
       try {
         recRef.current.start();
       } catch (err) {
         setStatus("error");
         setStatusMsg("Could not start recognition");
         listeningRef.current = false;
+        addLog("start() threw");
       }
     }
   };
@@ -163,6 +174,12 @@ export function VoicePanel() {
         />
         <span>{statusMsg || (status === "idle" ? "Idle" : status)}</span>
       </div>
+
+      {log.length > 0 && (
+        <div className="text-[9px] text-accent/30 mb-2 font-mono">
+          {log.map((l, i) => <div key={i}>{l}</div>)}
+        </div>
+      )}
 
       {lastHeard && (
         <p className="text-[10px] text-accent/50 mb-1">
