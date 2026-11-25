@@ -1,13 +1,10 @@
 const { app, BrowserWindow, ipcMain, session } = require("electron");
 const path = require("path");
+const fs = require("fs");
+const https = require("https");
 const { exec } = require("child_process");
+const voice = require("./voice");
 const isDev = process.env.NODE_ENV === "development";
-
-app.commandLine.appendSwitch("enable-features", "SpeechRecognition");
-app.commandLine.appendSwitch("enable-speech-input");
-
-const CHROME_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -23,8 +20,6 @@ function createWindow() {
       preload: path.join(__dirname, "preload.js"),
     },
   });
-
-  win.webContents.setUserAgent(CHROME_UA);
 
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === "media" || permission === "microphone");
@@ -54,6 +49,43 @@ function sendKey(key) {
 }
 
 ipcMain.on("send-key", (_e, key) => sendKey(key));
+
+ipcMain.handle("vosk-status", () => ({
+  ready: voice.isModelReady(),
+  path: voice.getModelPath(),
+}));
+
+ipcMain.handle("vosk-init", () => voice.init());
+
+ipcMain.handle("vosk-audio", (_e, buffer) => {
+  const buf = Buffer.from(buffer);
+  return voice.acceptWaveform(buf);
+});
+
+ipcMain.handle("vosk-final", () => voice.finalResult());
+
+ipcMain.handle("vosk-download", async () => {
+  const url = "https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip";
+  const dest = path.join(app.getPath("userData"), "vosk-model.zip");
+  const extractTo = app.getPath("userData");
+
+  return new Promise((resolve, reject) => {
+    const file = fs.createWriteStream(dest);
+    https.get(url, (res) => {
+      res.pipe(file);
+      file.on("finish", () => {
+        file.close();
+        const cmd = process.platform === "win32"
+          ? `powershell -NoProfile -Command "Expand-Archive -Path '${dest}' -DestinationPath '${extractTo}' -Force"`
+          : `unzip -o '${dest}' -d '${extractTo}'`;
+        exec(cmd, (err) => {
+          if (err) reject(String(err));
+          else resolve({ ok: true });
+        });
+      });
+    }).on("error", reject);
+  });
+});
 
 app.whenReady().then(createWindow);
 
