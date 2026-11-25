@@ -4,7 +4,8 @@ Star Citizen hauler mission planner with OCR contract reading, route optimizatio
 
 ## Features
 
-- Screenshot OCR for contracts (Tesseract.js)
+- Screenshot OCR for contracts: local PaddleOCR in the desktop app (Windows and Linux), Tesseract.js as fallback and in the browser. Nothing is sent online
+- Edit SCU per stop on a mission if the OCR misreads a number
 - Multi-stop mission support with running SCU tracking
 - Genetic algorithm route optimizer (capacity, deadlines, current location)
 - Cargo grid visualization with load order
@@ -13,6 +14,10 @@ Star Citizen hauler mission planner with OCR contract reading, route optimizatio
 - Desktop app for Windows and Linux
 
 ## Desktop App
+
+The desktop app reads contract screenshots with PaddleOCR (PP-OCRv4 models, run locally through `@gutenye/ocr-node` and ONNX Runtime). It runs in a separate process. If it is missing or fails, or its read is incomplete, the app falls back to Tesseract.js. Contracts with hidden lines (for example lens flare over an objective) are refused instead of added with wrong data. If a number is misread, click the mission in the Missions list and fix the SCU per stop, then Save.
+
+Setup for both platforms: `npm install` (downloads about 80 MB of OCR runtime and models) and the Node.js version Next.js 15 requires.
 
 ### Windows
 
@@ -78,7 +83,13 @@ In another terminal:
 npm run electron:dev
 ```
 
+Tests: `node --experimental-strip-types tests/parseContract.test.mjs` (and `tests/routeValidity.test.mjs`).
+
 ## Notes
+
+- OCR: PaddleOCR (desktop app only) first, Tesseract.js fallback. The desktop packages are built with `asar` disabled on purpose, because the OCR runtime loads native libraries
+- Linux packages include the CPU ONNX runtime only (no CUDA/TensorRT)
+- `xdotool` only works on X11. Under Wayland, run the game and the app via XWayland or use an X11 session
 
 - Voice recognition uses Vosk (offline, works on Windows and Linux)
 - Windows key sending requires AutoHotkey v2

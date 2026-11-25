@@ -32,8 +32,24 @@ export default function Home() {
 
   const saveEdit = () => {
     if (!editing) return;
-    updateMission(editing.id, editing);
+    const legs = editing.legs;
+    // With legs, the route uses leg SCU: keep the mission total in step with the pickups.
+    const scu = legs && legs.length > 0
+      ? legs.filter((l) => l.type === "pickup").reduce((sum, l) => sum + l.scu, 0) || editing.scu
+      : editing.scu;
+    updateMission(editing.id, { ...editing, scu });
     setEditing(null);
+  };
+
+  const setLegScu = (index: number, value: string) => {
+    if (!editing?.legs) return;
+    const n = Math.max(0, Math.floor(Number(value) || 0));
+    setEditing({ ...editing, legs: editing.legs.map((l, i) => (i === index ? { ...l, scu: n } : l)) });
+  };
+
+  const legTotals = (m: Mission) => {
+    const sum = (t: "pickup" | "dropoff") => (m.legs ?? []).filter((l) => l.type === t).reduce((a, l) => a + l.scu, 0);
+    return { pickup: sum("pickup"), dropoff: sum("dropoff") };
   };
 
   const containerTooBig = (m: Mission) =>
@@ -138,6 +154,45 @@ export default function Home() {
                 <input value={editing.pickup} onChange={(e) => setEditing({ ...editing, pickup: e.target.value })} className="rounded bg-ink border border-elevated px-2 py-1 text-xs" placeholder="Pickup" />
                 <input value={editing.dropoff} onChange={(e) => setEditing({ ...editing, dropoff: e.target.value })} className="rounded bg-ink border border-elevated px-2 py-1 text-xs" placeholder="Dropoff" />
               </div>
+              {editing.legs && editing.legs.length > 0 ? (
+                <div className="mb-2 space-y-1">
+                  <div className="text-[10px] text-accent/50">SCU per stop (fix a misread)</div>
+                  {editing.legs.map((l, i) => (
+                    <div key={i} className="flex items-center gap-2 text-xs">
+                      <span className={`w-14 ${l.type === "pickup" ? "text-sage" : "text-gold/80"}`}>
+                        {l.type === "pickup" ? "Pickup" : "Deliver"}
+                      </span>
+                      <span className="flex-1 truncate text-accent/70">
+                        {l.commodity ? `${l.commodity} · ` : ""}{l.location.replace(/ above .*/, "")}
+                      </span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={l.scu}
+                        onChange={(e) => setLegScu(i, e.target.value)}
+                        className="w-16 rounded bg-ink border border-elevated px-2 py-1 text-xs text-right"
+                        aria-label={`SCU ${l.type} ${l.location}`}
+                      />
+                    </div>
+                  ))}
+                  {legTotals(editing).pickup !== legTotals(editing).dropoff && (
+                    <div className="text-[10px] text-red-400">
+                      Pickups total {legTotals(editing).pickup} SCU but deliveries total {legTotals(editing).dropoff}. Fix both sides so the route stays valid.
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="mb-2 flex items-center gap-2 text-xs">
+                  <span className="text-accent/50">SCU</span>
+                  <input
+                    type="number"
+                    min={0}
+                    value={editing.scu}
+                    onChange={(e) => setEditing({ ...editing, scu: Math.max(0, Math.floor(Number(e.target.value) || 0)) })}
+                    className="w-20 rounded bg-ink border border-elevated px-2 py-1 text-xs text-right"
+                  />
+                </div>
+              )}
               <div className="flex gap-2">
                 <button onClick={saveEdit} className="rounded bg-gold text-ink px-2 py-1 text-xs font-medium">Save</button>
                 <button onClick={() => setEditing(null)} className="rounded border border-elevated px-2 py-1 text-xs">Cancel</button>
