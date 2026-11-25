@@ -52,28 +52,28 @@ export default function Home() {
 
   return (
     <main className="container mx-auto px-4 py-8 max-w-6xl">
-      <header className="mb-6 border-b border-elevated pb-5">
+      <header className="mb-6 pb-5">
         <h1 className="text-3xl font-bold tracking-tight text-gold">
           SC Hauler Planner
         </h1>
-        <p className="mt-1 text-sm text-accent/60">
+        <p className="mt-1 text-sm text-accent/50">
           Stack contracts, optimize routes, maximize aUEC/hour
         </p>
         {progress.total > 0 && (
-          <div className="mt-3">
-            <div className="flex justify-between text-[10px] text-accent/50 mb-1">
-              <span>Run progress</span>
-              <span>{progress.done}/{progress.total} stops · {pct}%</span>
+          <div className="mt-4 max-w-xs">
+            <div className="flex justify-between text-[10px] text-accent/40 mb-1">
+              <span>Run</span>
+              <span>{progress.done}/{progress.total} · {pct}%</span>
             </div>
-            <div className="h-1.5 rounded-full bg-ink overflow-hidden">
-              <div className="h-full bg-gold transition-all" style={{ width: `${pct}%` }} />
+            <div className="h-1 rounded-full bg-ink overflow-hidden">
+              <div className="h-full bg-gradient-to-r from-sage to-gold transition-all duration-300" style={{ width: `${pct}%` }} />
             </div>
           </div>
         )}
       </header>
 
-      <div className="grid gap-6 md:grid-cols-3">
-        <div className="md:col-span-1 space-y-5">
+      <div className="grid gap-5 md:grid-cols-3">
+        <div className="md:col-span-1 space-y-4">
           <ShipSelector />
           <LocationSelector />
           <MissionProgress />
@@ -82,22 +82,22 @@ export default function Home() {
         </div>
 
         <div className="md:col-span-2">
-          <div className="rounded-lg border border-elevated bg-elevated/40 p-4">
+          <div className="panel p-4">
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-sm font-medium uppercase tracking-wider text-accent/60">
+              <h2 className="text-xs font-medium uppercase tracking-wider text-accent/50">
                 Active Missions ({missions.length})
               </h2>
               {missions.length > 0 && (
                 <button
                   onClick={clearMissions}
-                  className="text-xs text-red-400 hover:text-red-300"
+                  className="text-[10px] text-red-400/70 hover:text-red-300 transition"
                 >
                   Clear all
                 </button>
               )}
             </div>
             {missions.length === 0 ? (
-              <p className="text-accent/40 text-sm">Add missions to plan a route.</p>
+              <p className="text-accent/35 text-sm py-2">Add missions to plan a route.</p>
             ) : (
               <ul className="space-y-2">
                 {missions.map((m) => {
@@ -107,32 +107,32 @@ export default function Home() {
                     <li key={m.id}>
                       <button
                         onClick={() => setEditing(m)}
-                        className="w-full text-left rounded-md border border-elevated bg-ink/40 hover:bg-ink/70 px-3 py-2.5 transition"
+                        className="w-full text-left rounded-lg border border-elevated/60 bg-ink/50 hover:bg-ink/80 hover:border-elevated px-3 py-2.5 transition"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="text-sm truncate">{m.pickup} → {m.dropoff}</div>
                             <div className="flex flex-wrap gap-1.5 mt-1.5">
                               {m.legs && m.legs.length > 2 && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-elevated text-accent/60">
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-elevated/80 text-accent/50">
                                   {m.legs.length} legs
                                 </span>
                               )}
                               {m.maxContainerSize && (
-                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-elevated text-accent/60">
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-elevated/80 text-accent/50">
                                   {m.maxContainerSize} SCU boxes
                                 </span>
                               )}
                               {left !== null && (
-                                <span className={`text-[9px] px-1.5 py-0.5 rounded ${left < 30 ? "bg-red-900/40 text-red-300" : "bg-elevated text-accent/60"}`}>
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded ${left < 30 ? "bg-red-900/50 text-red-300" : "bg-elevated/80 text-accent/50"}`}>
                                   {left === 0 ? "Expired" : `${left} min`}
                                 </span>
                               )}
                             </div>
                           </div>
                           <div className="text-right flex-shrink-0">
-                            <div className="text-gold text-sm font-medium">{m.reward.toLocaleString()}</div>
-                            <div className="text-[10px] text-accent/50">{m.scu} SCU</div>
+                            <div className="text-gold text-sm font-semibold tabular-nums">{m.reward.toLocaleString()}</div>
+                            <div className="text-[10px] text-accent/40">{m.scu} SCU</div>
                           </div>
                         </div>
                         {tooBig && (
@@ -149,19 +149,19 @@ export default function Home() {
           </div>
 
           {editing && (
-            <div className="mt-4 rounded-lg border border-gold/40 bg-elevated/70 p-4 text-sm">
+            <div className="mt-4 panel p-4 text-sm border-gold/30">
               <h3 className="font-medium mb-3 text-gold">Edit Mission</h3>
               <div className="grid grid-cols-2 gap-2 mb-2">
                 <input
                   value={editing.pickup}
                   onChange={(e) => setEditing({ ...editing, pickup: e.target.value })}
-                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  className="rounded bg-ink border border-elevated px-2 py-1.5"
                   placeholder="Pickup"
                 />
                 <input
                   value={editing.dropoff}
                   onChange={(e) => setEditing({ ...editing, dropoff: e.target.value })}
-                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  className="rounded bg-ink border border-elevated px-2 py-1.5"
                   placeholder="Dropoff"
                 />
               </div>
@@ -170,14 +170,14 @@ export default function Home() {
                   type="number"
                   value={editing.reward}
                   onChange={(e) => setEditing({ ...editing, reward: Number(e.target.value) })}
-                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  className="rounded bg-ink border border-elevated px-2 py-1.5"
                   placeholder="Reward"
                 />
                 <input
                   type="number"
                   value={editing.scu}
                   onChange={(e) => setEditing({ ...editing, scu: Number(e.target.value) })}
-                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  className="rounded bg-ink border border-elevated px-2 py-1.5"
                   placeholder="SCU"
                 />
               </div>
@@ -191,7 +191,7 @@ export default function Home() {
                       availableMinutes: e.target.value ? Number(e.target.value) : undefined,
                     })
                   }
-                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  className="rounded bg-ink border border-elevated px-2 py-1.5"
                   placeholder="Time left (min)"
                 />
                 <input
@@ -203,15 +203,15 @@ export default function Home() {
                       maxContainerSize: e.target.value ? Number(e.target.value) : undefined,
                     })
                   }
-                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  className="rounded bg-ink border border-elevated px-2 py-1.5"
                   placeholder="Max container (SCU)"
                 />
               </div>
               <div className="flex gap-2">
-                <button onClick={saveEdit} className="rounded bg-gold text-ink px-3 py-1 text-sm">
+                <button onClick={saveEdit} className="rounded bg-gold text-ink px-3 py-1.5 text-sm font-medium">
                   Save
                 </button>
-                <button onClick={() => setEditing(null)} className="rounded border border-elevated px-3 py-1 text-sm">
+                <button onClick={() => setEditing(null)} className="rounded border border-elevated px-3 py-1.5 text-sm">
                   Cancel
                 </button>
                 <button
@@ -219,7 +219,7 @@ export default function Home() {
                     removeMission(editing.id);
                     setEditing(null);
                   }}
-                  className="rounded text-red-400 border border-red-400/40 px-3 py-1 text-sm ml-auto"
+                  className="rounded text-red-400 border border-red-400/30 px-3 py-1.5 text-sm ml-auto"
                 >
                   Delete
                 </button>
@@ -227,7 +227,7 @@ export default function Home() {
             </div>
           )}
 
-          <div className="mt-5">
+          <div className="mt-4">
             <RouteView />
             <RouteMap />
             <PackingView />
