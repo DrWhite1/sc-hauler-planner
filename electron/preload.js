@@ -7,4 +7,5 @@ contextBridge.exposeInMainWorld("electronAPI", {
   voskAudio: (buffer) => ipcRenderer.invoke("vosk-audio", buffer),
   voskFinal: () => ipcRenderer.invoke("vosk-final"),
   downloadModel: () => ipcRenderer.invoke("vosk-download"),
+  captureScreenshot: () => ipcRenderer.invoke("capture-screenshot"),
 });
