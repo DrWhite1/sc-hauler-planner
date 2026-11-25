@@ -1,5 +1,8 @@
 export type Location = {
   name: string;
+  // true = the location has a station cargo deck / loading dock with external freight
+  // elevators, so ships that cannot enter a hangar (e.g. Hull C) can load there ("EXT").
+  // Checked against UEX Corp (has_loading_dock) and community sources for 4.10.3, Nov 2026.
   externalPort: boolean;
 };
 
@@ -38,23 +41,24 @@ export const LOCATIONS: Location[] = [
   { name: "MIC-L4 Red Crossroads", externalPort: false },
   { name: "MIC-L5 Modern Icarus", externalPort: false },
 
-  // Gateways
-  { name: "Pyro Gateway", externalPort: false },
-  { name: "Nyx Gateway", externalPort: false },
-  { name: "Terra Gateway", externalPort: false },
+  // Gateways (the Stanton-side gateways and Stanton Gateway in Pyro have cargo decks)
+  { name: "Pyro Gateway", externalPort: true },
+  { name: "Nyx Gateway", externalPort: true },
+  { name: "Terra Gateway", externalPort: true },
   { name: "Magnus Gateway", externalPort: false },
-  { name: "Stanton Gateway (Pyro)", externalPort: false },
+  { name: "Stanton Gateway (Pyro)", externalPort: true },
   { name: "Nyx Gateway (Pyro)", externalPort: false },
   { name: "Stanton Gateway (Nyx)", externalPort: false },
 
-  // Pyro stations (main stations have external freight elevators)
+  // Pyro stations (Ruin, Checkmate, Orbituary, Gaslight and Megumi have cargo decks)
   { name: "Ruin Station", externalPort: true },
   { name: "Checkmate", externalPort: true },
   { name: "Orbituary", externalPort: true },
+  { name: "Gaslight", externalPort: true },
   { name: "Starlight Service Station", externalPort: false },
   { name: "Dudley & Daughters", externalPort: false },
   { name: "Patch City", externalPort: false },
-  { name: "Megumi Refueling", externalPort: false },
+  { name: "Megumi Refueling", externalPort: true },
   { name: "Endgame", externalPort: false },
   { name: "Rod's Fuel 'N Supplies", externalPort: false },
 
@@ -63,7 +67,37 @@ export const LOCATIONS: Location[] = [
   { name: "Security Post Kareah", externalPort: false },
 ];
 
+// Contract text names places in several ways ("Port Tressler above microTech",
+// "Checkmate Station", "Pyro Gateway (Stanton)"), so compare a normalized form.
+export function normalizeLocationName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/\s+(?:above|on|at)\s.*$/, "")
+    .replace(/\s+station$/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Alternative names for the same place that the normalizer alone does not catch.
+const EXTRA_NAMES: Record<string, string> = {
+  "pyro gateway (stanton)": "Pyro Gateway",
+  "nyx gateway (stanton)": "Nyx Gateway",
+  "terra gateway (stanton)": "Terra Gateway",
+  "green imperial housing exchange": "Grim HEX",
+};
+
+export function findLocation(locationName: string): Location | undefined {
+  if (!locationName) return undefined;
+  const n = normalizeLocationName(locationName);
+  const alias = EXTRA_NAMES[n];
+  const target = alias ? normalizeLocationName(alias) : n;
+  return LOCATIONS.find((l) => normalizeLocationName(l.name) === target);
+}
+
 export function hasExternalPort(locationName: string): boolean {
-  const loc = LOCATIONS.find((l) => l.name.toLowerCase() === locationName.toLowerCase());
-  return loc?.externalPort ?? false;
+  // Multi-stop pickups are joined with " + "; flag only if every part has a cargo deck.
+  const parts = locationName.split(/\s+\+\s+/).filter(Boolean);
+  if (parts.length === 0) return false;
+  return parts.every((p) => findLocation(p)?.externalPort ?? false);
 }
