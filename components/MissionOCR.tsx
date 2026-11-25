@@ -12,11 +12,16 @@ const LOCATION_ALIASES: Record<string, string> = {
   everus: "Everus Harbor",
   seraphim: "Seraphim Station",
   baijini: "Baijini Point",
-  "brio": "Brio's Breaker Yard",
-  "sacren": "Sacren's Plot",
+  brio: "Brio's Breaker Yard",
+  sacren: "Sacren's Plot",
   "modern icarus": "MIC-L5 Modern Icarus",
   "nb int": "NB Int. Spaceport",
-  "spaceport": "NB Int. Spaceport",
+  spaceport: "NB Int. Spaceport",
+  arccorp: "ArcCorp Mining Area 157",
+  rayari: "Rayari Kaitag Research Outpost",
+  kaitag: "Rayari Kaitag Research Outpost",
+  hdms: "HDMS-Oparei",
+  oparei: "HDMS-Oparei",
 };
 
 function normalizeLocation(raw: string): string {
@@ -48,38 +53,35 @@ function parseContractText(text: string) {
   const collects: { commodity: string; location: string; scu: number }[] = [];
   const delivers: { commodity: string; location: string; scu: number }[] = [];
 
-  // Loose collect: look for commodity + location fragments
-  const collectLoose = full.match(/(?:collect|col|pick)\s+([a-z]+)\s+(?:from|at)?\s*([a-z'\s]+)/i);
-  if (collectLoose) {
-    const commodity = collectLoose[1].trim();
-    const locRaw = collectLoose[2].trim();
-    const location = normalizeLocation(locRaw);
-    collects.push({ commodity, location, scu: 0 });
-  }
-
-  // Loose deliver: "0/6 SCU of X to Y"
-  const deliverLoose = full.match(/(\d+)\/(\d+)\s*SCU\s+of\s+([a-z\s]+?)\s+to\s+([a-z'\s]+)/i);
-  if (deliverLoose) {
-    const scu = parseInt(deliverLoose[2], 10);
-    const commodity = deliverLoose[3].trim();
-    const locRaw = deliverLoose[4].trim();
-    const location = normalizeLocation(locRaw);
-    delivers.push({ commodity, location, scu });
-  }
-
-  // Fallback SCU
-  if (delivers.length === 0) {
-    const scuMatch = full.match(/(\d+)\s*SCU/i);
-    const scu = scuMatch ? parseInt(scuMatch[1], 10) : 0;
-    if (collects.length > 0) {
-      delivers.push({ commodity: collects[0].commodity, location: "", scu });
+  // All collect lines (global)
+  const collectRegex = /(?:collect|col)\s+([a-z]+)\s+(?:from|at)\s+([a-z'\s]+?)(?:\.|$|\n)/gi;
+  let m;
+  while ((m = collectRegex.exec(full)) !== null) {
+    const commodity = m[1].trim();
+    const location = normalizeLocation(m[2].trim());
+    if (commodity && location) {
+      collects.push({ commodity, location, scu: 0 });
     }
   }
 
-  if (collects.length > 0 && delivers.length > 0 && collects[0].scu === 0) {
+  // All deliver lines (global)
+  const deliverRegex = /(\d+)\/(\d+)\s*SCU\s+of\s+([a-z\s]+?)\s+to\s+([a-z'\s]+?)(?:\.|$|\n)/gi;
+  while ((m = deliverRegex.exec(full)) !== null) {
+    const scu = parseInt(m[2], 10);
+    const commodity = m[3].trim();
+    const location = normalizeLocation(m[4].trim());
+    if (commodity && location && scu > 0) {
+      delivers.push({ commodity, location, scu });
+    }
+  }
+
+  // Match SCU to collects
+  if (collects.length > 0 && delivers.length > 0) {
     const totalDeliver = delivers.reduce((s, d) => s + d.scu, 0);
     const perCollect = Math.round(totalDeliver / Math.max(1, collects.length));
-    collects.forEach((c) => (c.scu = perCollect));
+    collects.forEach((c) => {
+      if (c.scu === 0) c.scu = perCollect;
+    });
   }
 
   const totalScu = delivers.reduce((s, d) => s + d.scu, 0) || collects.reduce((s, c) => s + c.scu, 0);
@@ -87,8 +89,8 @@ function parseContractText(text: string) {
   const pickupLocs = [...new Set(collects.map((c) => c.location).filter(Boolean))];
   const dropoffLocs = [...new Set(delivers.map((d) => d.location).filter(Boolean))];
 
-  const pickup = pickupLocs.length ? pickupLocs.slice(0, 3).join(" + ") : "";
-  const dropoff = dropoffLocs.length ? dropoffLocs.slice(0, 3).join(" + ") : "";
+  const pickup = pickupLocs.length ? pickupLocs.slice(0, 4).join(" + ") : "";
+  const dropoff = dropoffLocs.length ? dropoffLocs.slice(0, 4).join(" + ") : "";
 
   const legs: Leg[] = [];
   for (const c of collects) {
@@ -138,8 +140,8 @@ export function MissionOCR() {
 
       if (result.reward && result.pickup && result.dropoff) {
         addMission({
-          pickup: result.pickup.slice(0, 100),
-          dropoff: result.dropoff.slice(0, 100),
+          pickup: result.pickup.slice(0, 120),
+          dropoff: result.dropoff.slice(0, 120),
           reward: result.reward,
           scu: result.totalScu || 0,
           corporation: "Covalex",
