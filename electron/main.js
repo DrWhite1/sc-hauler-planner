@@ -4,7 +4,6 @@ const fs = require("fs");
 const https = require("https");
 const { exec } = require("child_process");
 const voice = require("./voice");
-const isDev = process.env.NODE_ENV === "development";
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -29,11 +28,11 @@ function createWindow() {
     return permission === "media" || permission === "microphone";
   });
 
-  if (isDev) {
-    win.loadURL("http://localhost:3000");
-    win.webContents.openDevTools();
+  const staticPath = path.join(__dirname, "../out/index.html");
+  if (fs.existsSync(staticPath)) {
+    win.loadFile(staticPath);
   } else {
-    win.loadFile(path.join(__dirname, "../out/index.html"));
+    win.loadURL("http://localhost:3000");
   }
 }
 
