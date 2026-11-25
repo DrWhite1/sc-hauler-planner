@@ -1,4 +1,4 @@
-import { parseContractText as parse, applySuggestedPickups, pickConsensus } from "../lib/parseContract.ts";
+import { parseContractText as parse, applySuggestedPickups, pickConsensus, mergeReads } from "../lib/parseContract.ts";
 import { LOCATIONS } from "../lib/locations.ts";
 
 const known = LOCATIONS.map((l) => l.name);
@@ -262,5 +262,31 @@ Collect Stims from ArcCorp Mining Area 141.
   assert.equal(r.complete, true);
   assert.deepEqual(r.collects.map((c) => c.location), ["Shubin Mining Facility SMCa-6", "HDMS-Ryder", "ArcCorp Mining Area 061", "ArcCorp Mining Area 141"]);
   assert.ok(r.delivers.every((d) => d.location === "Sunset Mesa"));
+}
+// "Collect" garbled: "<commodity> from <place>" still counts as the pickup
+{
+  const r = parse(`Deliver 0/2 SCU of Souvenirs to Sunset Mesa on Pyro II.
+saa Souvenirs from Shubin Mining Facility SMCa-6.`, known);
+  assert.equal(r.collects[0].location, "Shubin Mining Facility SMCa-6");
+  assert.equal(r.complete, true);
+}
+// wrapped name whose last part was not read is not accepted as a place
+{
+  const r = parse(`Deliver 0/2 SCU of Souvenirs to Sunset Mesa on Pyro II.
+Collect Souvenirs from Shubin Mining Facility SMCa-`, known);
+  assert.equal(r.complete, false);
+}
+// voting across passes: each pass garbles a different line, the votes still agree
+{
+  const a = parse(`Deliver 0/2 SCU of Stims to Sunset Mesa on Pyro II.\nCollect Stims from ArcCorp Mining Area 141.\nDeliver 0/4 SCU of Processed Food to Sunset Mesa on Pyro II.`, known);
+  const b = parse(`Deliver 0/72 SCU of Stims to Sunset Mesa on Pyro II.\nCollect Stims from ArcCorp Mining Area 141.\nDeliver 0/4 SCU of Processed Food to Sunset Mesa on Pyro II.\nCollect Processed Food from ArcCorp Mining Area 061.`, known);
+  const c = parse(`Deliver 0/2 SCU of Stims to Sunset Mesa on Pyro II.\nCollect Stims from ArcCorp Mining Area 141.\nDeliver 0/4 SCU of Processed Food to Sunset Mesa on Pyro II.\nCollect Processed Food from ArcCorp Mining Area 061.`, known);
+  const d = parse(`Deliver 0/2 SCU of Stims to Sunset Mesa on Pyro II.\nDeliver 0/4 SCU of Processed Food to Sunset Mesa on Pyro II.\nCollect Processed Food from ArcCorp Mining Area 061.\nCollect Stims from ArcCorp Mining Area 141.`, known);
+  const m = mergeReads([a, b, c, d]);
+  assert.ok(m.chosen && m.chosen.complete, m.detail);
+  assert.deepEqual(m.chosen.delivers.map((x) => [x.commodity, x.scu]).sort(), [["processed food", 4], ["stims", 2]]);
+  // an objective seen but never readable twice must fail, not be dropped
+  const lone = parse(`Deliver 0/2 SCU of Stims to Sunset Mesa on Pyro II.\nCollect Stims from ArcCorp Mining Area 141.\nDeliver 0/9 SCU of Gold to Seraphim Station.`, known);
+  assert.equal(mergeReads([lone, lone]).chosen, null);
 }
 console.log("ALL TESTS PASSED");

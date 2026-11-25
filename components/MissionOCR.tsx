@@ -9,6 +9,7 @@ import {
   applySuggestedPickups,
   scoreParse,
   pickConsensus,
+  mergeReads,
   type ParsedContract,
 } from "@/lib/parseContract";
 
@@ -115,6 +116,9 @@ export function MissionOCR() {
             { scale: 2, psm: "6" },
             { scale: 2, psm: "4" },
             { scale: 3, psm: "6" },
+            { scale: 4, psm: "4" },
+            { scale: 4, psm: "6" },
+            { scale: 2, psm: "3" },
           ];
           reads.push(result);
           for (const pass of passes) {
@@ -134,6 +138,26 @@ export function MissionOCR() {
             // Stop as soon as two complete reads agree on every quantity and location.
             if (pickConsensus(reads).state === "agreed") break;
           }
+          // Reward and corporation sit in the header box above the objectives, outside the crop.
+          try {
+            const header: Region = {
+              x0: Math.max(0, region.x0),
+              y0: 0,
+              x1: width,
+              y1: Math.max(region.y0 + 4, 40),
+            };
+            const hCrop = await cropRegion(file, header, 3);
+            await worker.setParameters({ tessedit_pageseg_mode: "6" as any });
+            const h = parseContractText((await worker.recognize(hCrop)).data.text, KNOWN_LOCATIONS);
+            if (h.reward || h.corporation) {
+              for (const r of reads) {
+                if (h.reward) r.reward = h.reward;
+                if (h.corporation) r.corporation = h.corporation;
+              }
+            }
+          } catch (hdrErr) {
+            console.warn("header OCR pass failed", hdrErr);
+          }
         } catch (cropErr) {
           console.warn("objectives-column OCR pass failed", cropErr);
         }
@@ -145,7 +169,16 @@ export function MissionOCR() {
 
       // A complete first read that needed no crop pass still counts as one read.
       if (reads.length === 0) reads.push(result);
-      const consensus = pickConsensus(reads);
+      let consensus = pickConsensus(reads);
+      // No single pass was clean: vote per objective across all passes.
+      if (consensus.state !== "agreed" && consensus.state !== "single") {
+        const merged = mergeReads(reads);
+        if (merged.chosen && merged.chosen.complete) {
+          consensus = { chosen: merged.chosen, state: "agreed", detail: "" };
+        } else if (merged.detail) {
+          consensus = { chosen: null, state: "conflict", detail: merged.detail };
+        }
+      }
       if (consensus.chosen) {
         result = consensus.chosen;
         setParsed(result);

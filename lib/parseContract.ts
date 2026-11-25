@@ -91,7 +91,7 @@ function windowAfter(full: string, from: number, len = 80): string {
 export function matchLocation(windowText: string, known: string[] = []): LocationMatch {
   const cleaned = stripListNoise(windowText);
   const lower = normalizeLCodes(cleaned.toLowerCase());
-  const raw = cleaned.split(/\.(?:\s|$)|\s+on\s+/i)[0].trim().replace(/\.$/, "").slice(0, 50);
+  const raw = cleaned.replace(/-\s+(?=[0-9A-Za-z])/g, "-").split(/\.(?:\s|$)|\s+on\s+/i)[0].trim().replace(/\.$/, "").slice(0, 50);
   // "ArcCorp Mining Area 141": the number is part of the name.
   const arc = /arc\s*corp\s+mining\s+are[a-z]\s+([0-9OoIl]{2,3})/i.exec(cleaned);
   if (arc) {
@@ -113,6 +113,7 @@ export function matchLocation(windowText: string, known: string[] = []): Locatio
 }
 
 function looksLikeLocation(raw: string): boolean {
+  if (raw.endsWith("-")) return false; // wrapped name whose last part was not read
   if (!/^[A-Z][A-Za-z0-9'\-]+( [A-Za-z0-9'\-]+){0,5}$/.test(raw)) return false;
   return raw.split(" ").every((t) => t.length >= 2 || /^[AIVX]$/.test(t));
 }
@@ -217,6 +218,7 @@ function finalize(
     unknownLocations,
     warnings,
     suggestedPickup: base.suggestedPickup,
+    expectedDelivers: base.expectedDelivers ?? 0,
     suggestedUsed,
     complete,
     maxContainerSize: undefined as number | undefined,
@@ -284,6 +286,17 @@ export function parseContractText(rawText: string, knownLocations: string[] = []
     if (commodity) collects.push({ commodity, location: loc.name, scu: 0, locationRaw: loc.raw });
   }
 
+  // The word "Collect" is often garbled; a line "<commodity> from <place>" for a commodity that is
+  // being delivered is still a pickup.
+  for (const d of delivers) {
+    if (collects.some((c) => c.commodity === d.commodity)) continue;
+    const esc = d.commodity.replace(/[^a-z' ]/g, "").replace(/ /g, "\\s+");
+    const fm = new RegExp(`${esc}\\s+from\\s+`, "i").exec(full);
+    if (!fm) continue;
+    const loc = matchLocation(windowAfter(full, fm.index + fm[0].length), knownLocations);
+    collects.push({ commodity: d.commodity, location: loc.name, scu: 0, locationRaw: loc.raw });
+  }
+
   const expectedDelivers = (full.match(/\bdeliver\s+[0-9OoIl]+\s*\/\s*\d+/gi) ?? []).length;
   const expectedCollects = (text.match(/(?:^|\n)[^A-Za-z0-9\n]*collect\b/gi) ?? []).length;
   return finalize(
@@ -339,7 +352,9 @@ export type Consensus = {
 };
 
 export function pickConsensus(reads: ParsedContract[]): Consensus {
-  const complete = reads.filter((r) => r.complete);
+  // A read that saw more objective lines than it could parse is not trustworthy.
+  const seen = Math.max(0, ...reads.map((r) => r.expectedDelivers));
+  const complete = reads.filter((r) => r.complete && r.delivers.length >= seen);
   if (complete.length === 0) return { chosen: null, state: "none", detail: "" };
   const groups = new Map<string, ParsedContract[]>();
   for (const r of complete) {
@@ -348,7 +363,107 @@ export function pickConsensus(reads: ParsedContract[]): Consensus {
   }
   const best = [...groups.values()].sort((a, b) => b.length - a.length)[0];
   if (best.length >= 2) return { chosen: best[0], state: "agreed", detail: "" };
-  if (groups.size === 1) return { chosen: best[0], state: "single", detail: "" };
+  if (reads.length === 1 && groups.size === 1) return { chosen: best[0], state: "single", detail: "" };
   const parts = [...groups.values()].map((g) => g[0].delivers.map((d) => `${d.commodity} ${d.scu}`).join(", "));
   return { chosen: null, state: "conflict", detail: parts.join(" vs ") };
+}
+
+
+// ---------------------------------------------------------------------------------------------
+// Voting across OCR passes. Each pass garbles different lines, so no single pass is complete.
+// Vote per objective (commodity cluster) on its quantity and locations instead.
+// ---------------------------------------------------------------------------------------------
+type Vote = Map<string, number>;
+const bump = (v: Vote, k: string) => v.set(k, (v.get(k) ?? 0) + 1);
+
+function winner(v: Vote, minVotes: number): { value: string } | { conflict: string } | null {
+  const ranked = [...v.entries()].sort((a, b) => b[1] - a[1]);
+  if (!ranked.length || ranked[0][1] < minVotes) return null;
+  if (ranked[1] && ranked[1][1] === ranked[0][1]) return { conflict: ranked.slice(0, 2).map((r) => r[0]).join(" vs ") };
+  return { value: ranked[0][0] };
+}
+
+export type Merged = { chosen: ParsedContract | null; detail: string };
+
+export function mergeReads(reads: ParsedContract[]): Merged {
+  if (reads.length < 2) return { chosen: null, detail: "" };
+  const minVotes = 2;
+
+  // Cluster commodity spellings across passes ("distllled spirits" ~ "distilled spirits").
+  const spellings = new Map<string, number>();
+  for (const r of reads) for (const x of [...r.delivers, ...r.collects]) bump(spellings, x.commodity);
+  const reps: string[] = [];
+  for (const [name] of [...spellings.entries()].sort((a, b) => b[1] - a[1])) {
+    const near = reps.find((rep) => rep === name || (Math.min(rep.length, name.length) >= 5 && lev(rep, name) <= 2));
+    if (!near) reps.push(name);
+  }
+  const cluster = (c: string) =>
+    reps.find((rep) => rep === c || (Math.min(rep.length, c.length) >= 5 && lev(rep, c) <= 2)) ?? c;
+
+  type Acc = { dN: number; cN: number; scu: Vote; dLoc: Vote; cLoc: Vote };
+  const acc = new Map<string, Acc>();
+  const get = (k: string) => {
+    if (!acc.has(k)) acc.set(k, { dN: 0, cN: 0, scu: new Map(), dLoc: new Map(), cLoc: new Map() });
+    return acc.get(k)!;
+  };
+  for (const r of reads) {
+    const seenD = new Set<string>();
+    const seenC = new Set<string>();
+    for (const d of r.delivers) {
+      const k = cluster(d.commodity);
+      if (seenD.has(k)) continue;
+      seenD.add(k);
+      const a = get(k);
+      a.dN++;
+      bump(a.scu, String(d.scu));
+      if (d.location) bump(a.dLoc, d.location);
+    }
+    for (const c of r.collects) {
+      const k = cluster(c.commodity);
+      if (seenC.has(k)) continue;
+      seenC.add(k);
+      const a = get(k);
+      a.cN++;
+      if (c.location) bump(a.cLoc, c.location);
+    }
+  }
+
+  const delivers: Delivery[] = [];
+  const collects: Collection[] = [];
+  const problems: string[] = [];
+  for (const [commodity, a] of acc) {
+    if (a.dN < minVotes && a.cN < minVotes) continue; // one-off garbage line
+    const scu = winner(a.scu, minVotes);
+    const dLoc = winner(a.dLoc, minVotes);
+    const cLoc = winner(a.cLoc, minVotes);
+    if (!scu) problems.push(`${commodity}: quantity not read twice`);
+    else if ("conflict" in scu) problems.push(`${commodity} quantity ${scu.conflict}`);
+    if (!dLoc) problems.push(`${commodity}: delivery place not read twice`);
+    else if ("conflict" in dLoc) problems.push(`${commodity} delivery place ${dLoc.conflict}`);
+    if (!cLoc) problems.push(`${commodity}: pickup not read twice`);
+    else if ("conflict" in cLoc) problems.push(`${commodity} pickup ${cLoc.conflict}`);
+    if (scu && "value" in scu && dLoc && "value" in dLoc && cLoc && "value" in cLoc) {
+      delivers.push({ commodity, location: dLoc.value, scu: Number(scu.value) });
+      collects.push({ commodity, location: cLoc.value, scu: 0 });
+    }
+  }
+  const seen = Math.max(0, ...reads.map((r) => r.expectedDelivers));
+  if (delivers.length < seen) problems.push(`${seen} objectives visible but only ${delivers.length} read twice`);
+  if (problems.length || delivers.length === 0) return { chosen: null, detail: problems.join("; ") };
+
+  const base = reads.find((r) => r.reward && r.corporation) ?? reads.find((r) => r.reward) ?? reads[0];
+  const rewardVotes: Vote = new Map();
+  for (const r of reads) if (r.reward) bump(rewardVotes, String(r.reward));
+  const reward = winner(rewardVotes, 1);
+  const merged = finalize(
+    {
+      reward: reward && "value" in reward ? Number(reward.value) : base.reward,
+      corporation: base.corporation,
+      lines: base.lines,
+      suggestedPickup: base.suggestedPickup,
+    },
+    delivers,
+    collects
+  );
+  return { chosen: merged, detail: "" };
 }
