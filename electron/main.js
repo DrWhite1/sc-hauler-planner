@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BrowserWindow, ipcMain, session } = require("electron");
 const path = require("path");
 const { exec } = require("child_process");
 const isDev = process.env.NODE_ENV === "development";
@@ -16,6 +16,14 @@ function createWindow() {
       contextIsolation: true,
       preload: path.join(__dirname, "preload.js"),
     },
+  });
+
+  session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
+    if (permission === "media" || permission === "microphone") {
+      callback(true);
+    } else {
+      callback(false);
+    }
   });
 
   if (isDev) {
