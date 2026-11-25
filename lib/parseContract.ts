@@ -41,6 +41,8 @@ export function cleanOcr(text: string): string {
   return text
     .replace(/[\u2018\u2019\u02BC`]/g, "'")
     .replace(/[\u201C\u201D]/g, '"')
+    .replace(/\bd[eo][l1I]{1,2}[iIl1]ver/gi, "Deliver")
+    .replace(/\bco[l1I]{2}[eo]ct/gi, "Collect")
     .replace(/[|©¢«»■◇◆♦<>~]/g, " ")
     .replace(/[ \t]+/g, " ");
 }
@@ -104,6 +106,16 @@ export function matchLocation(windowText: string, known: string[] = []): Locatio
     if (idx === -1) continue;
     if (!best || idx < best.idx || (idx === best.idx && key.length > best.len)) {
       best = { idx, len: key.length, name };
+    }
+  }
+  if (!best) {
+    // One or two wrong letters in an alias ("Sunaet Mesa"): match the closest alias.
+    for (const [key, name] of Object.entries(LOCATION_ALIASES)) {
+      if (key.length < 8) continue;
+      const cand = lower.slice(0, key.length + 1);
+      for (let w = key.length - 1; w <= key.length + 1; w++) {
+        if (w > 0 && lev(cand.slice(0, w), key) <= 1) best = { idx: 0, len: key.length, name };
+      }
     }
   }
   if (best) return { name: best.name, raw };
@@ -269,10 +281,10 @@ export function parseContractText(rawText: string, knownLocations: string[] = []
   const collects: Collection[] = [];
 
   // Deliver <done>/<total> SCU of <commodity> to <location>  ("0" is often read as "O")
-  const deliverRe = /deliver\s+[0-9OoIl]+\s*\/\s*(\d+)\s*SCU\s+of\s+([a-z][a-z' ]{1,40}?)\s+to\s+/gi;
+  const deliverRe = /deliver\s*[0-9OoIl]+\s*\/\s*([0-9OoIl]+)\s*SCU\s*of\s*([a-z][a-z' ]{1,40}?)\s+to\s*/gi;
   let m: RegExpExecArray | null;
   while ((m = deliverRe.exec(full)) !== null) {
-    const scu = parseInt(m[1], 10);
+    const scu = parseInt(m[1].replace(/[Oo]/g, "0").replace(/[Il]/g, "1"), 10);
     const commodity = cleanCommodity(m[2]);
     const loc = matchLocation(windowAfter(full, m.index + m[0].length), knownLocations);
     if (commodity && scu > 0) delivers.push({ commodity, location: loc.name, scu, locationRaw: loc.raw });
@@ -297,7 +309,7 @@ export function parseContractText(rawText: string, knownLocations: string[] = []
     collects.push({ commodity: d.commodity, location: loc.name, scu: 0, locationRaw: loc.raw });
   }
 
-  const expectedDelivers = (full.match(/\bdeliver\s+[0-9OoIl]+\s*\/\s*\d+/gi) ?? []).length;
+  const expectedDelivers = (full.match(/\bdeliver\s*[0-9OoIl]+\s*\/\s*[0-9OoIl]+/gi) ?? []).length;
   const expectedCollects = (text.match(/(?:^|\n)[^A-Za-z0-9\n]*collect\b/gi) ?? []).length;
   return finalize(
     { reward, corporation, lines: text.split(/\n+/), suggestedPickup, expectedDelivers, expectedCollects },

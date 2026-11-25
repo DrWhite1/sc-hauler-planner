@@ -21,10 +21,13 @@
     "directories": {
       "output": "dist"
     },
+    "asar": false,
     "files": [
       "electron/**/*",
       "out/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/onnxruntime-node/bin/napi-v6/{darwin,linux}/**",
+      "!node_modules/onnxruntime-node/bin/napi-v6/win32/arm64/**"
     ],
     "win": {
       "target": ["nsis"],
@@ -40,6 +43,8 @@
     }
   },
   "dependencies": {
+    "@gutenye/ocr-node": "^1.4.9",
+    "sharp": "^0.34.3",
     "next": "^15.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",

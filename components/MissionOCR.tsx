@@ -15,6 +15,10 @@ import {
 
 const KNOWN_LOCATIONS = LOCATIONS.map((l) => l.name);
 
+type LocalOcrApi = {
+  ocrContract?: (bytes: Uint8Array) => Promise<{ ok: boolean; header?: string; objectives?: string; error?: string }>;
+};
+
 type Region = { x0: number; y0: number; x1: number; y1: number };
 type OcrWord = { text: string; bbox: Region };
 
@@ -88,6 +92,31 @@ export function MissionOCR() {
     setPreview(url);
 
     try {
+      // Preferred engine: local PaddleOCR in the desktop app (much better on the game font).
+      // If it is unavailable or its read is not complete, fall back to tesseract.js below.
+      const api = (window as unknown as { electronAPI?: LocalOcrApi }).electronAPI;
+      let localNote = "";
+      if (api?.ocrContract) {
+        try {
+          setStatus("Reading screenshot (local OCR)...");
+          const res = await api.ocrContract(new Uint8Array(await file.arrayBuffer()));
+          if (res.ok && res.objectives) {
+            const localText = `${res.header ?? ""}\n${res.objectives}`;
+            const local = parseContractText(localText, KNOWN_LOCATIONS);
+            setExtracted(localText);
+            setParsed(local);
+            if (local.complete && local.reward) {
+              addFromResult(local);
+              return;
+            }
+            localNote = local.complete ? "reward not found" : local.warnings.join("; ");
+          }
+        } catch (localErr) {
+          console.warn("local OCR failed, using tesseract", localErr);
+        }
+        setStatus("Local OCR was not conclusive, trying a second engine...");
+      }
+
       const worker = await createWorker("eng");
       const { data } = await worker.recognize(file);
 
@@ -191,7 +220,7 @@ export function MissionOCR() {
       } else if (result.complete) {
         addFromResult(result);
       } else {
-        setStatus(`Not added: ${result.warnings.join("; ") || "nothing readable found"}`);
+        setStatus(`Not added: ${result.warnings.join("; ") || localNote || "nothing readable found"}`);
       }
     } catch (err) {
       console.error(err);

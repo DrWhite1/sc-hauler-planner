@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, session, desktopCapturer } = require("elect
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
-const { exec } = require("child_process");
+const { exec, execFile } = require("child_process");
 const os = require("os");
 const voice = require("./voice");
 
@@ -130,6 +130,38 @@ ipcMain.handle("capture-screenshot", async () => {
   if (!sources.length) return null;
   const img = sources[0].thumbnail;
   return img.toPNG().toString("base64");
+});
+
+ipcMain.handle("ocr-contract", (_e, bytes) => {
+  return new Promise((resolve) => {
+    const file = path.join(os.tmpdir(), `sc-contract-${Date.now()}.img`);
+    try {
+      fs.writeFileSync(file, Buffer.from(bytes));
+    } catch (err) {
+      resolve({ ok: false, error: String(err) });
+      return;
+    }
+    const worker = path.join(__dirname, "ocr-worker.js");
+    execFile(
+      process.execPath,
+      [worker, file],
+      { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, maxBuffer: 20 * 1024 * 1024, timeout: 90000 },
+      (err, stdout) => {
+        try { fs.unlinkSync(file); } catch {}
+        const marker = String(stdout || "").lastIndexOf("@@OCR@@");
+        if (marker === -1) {
+          console.log("local OCR unavailable:", err ? err.message : "no output");
+          resolve({ ok: false, error: err ? err.message : "no output" });
+          return;
+        }
+        try {
+          resolve(JSON.parse(String(stdout).slice(marker + 7).trim()));
+        } catch (parseErr) {
+          resolve({ ok: false, error: String(parseErr) });
+        }
+      }
+    );
+  });
 });
 
 ipcMain.handle("vosk-status", () => ({
