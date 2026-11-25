@@ -49,11 +49,21 @@ const VK = {
 function sendKey(key) {
   const k = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
   const vk = VK[k];
-  if (!vk) return;
+  if (!vk) {
+    console.log("unknown key:", key);
+    return;
+  }
 
   if (process.platform === "win32") {
     const script = path.join(__dirname, "sendkey.ps1");
-    exec(`powershell -NoProfile -ExecutionPolicy Bypass -File "${script}" -vk ${vk}`);
+    exec(
+      `powershell -NoProfile -ExecutionPolicy Bypass -File "${script}" -vk ${vk}`,
+      (err, stdout, stderr) => {
+        if (err) console.log("sendkey error:", err.message);
+        if (stderr) console.log("sendkey stderr:", stderr);
+        if (stdout) console.log("sendkey:", stdout.trim());
+      }
+    );
   } else {
     exec(`xdotool key ${k}`);
   }
