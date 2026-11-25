@@ -6,7 +6,7 @@ import { createModel } from "vosk-browser";
 
 declare global {
   interface Window {
-    electronAPI?: { sendKey: (key: string) => void };
+    electronAPI?: { sendKey: (payload: string | { key: string; duration?: number }) => void };
   }
 }
 
@@ -23,6 +23,7 @@ export function VoicePanel() {
   const [lastMatch, setLastMatch] = useState("");
   const [newPhrase, setNewPhrase] = useState("");
   const [newKey, setNewKey] = useState("");
+  const [newDuration, setNewDuration] = useState("");
   const recognizerRef = useRef<any>(null);
   const listeningRef = useRef(false);
 
@@ -52,7 +53,7 @@ export function VoicePanel() {
         if (match) {
           setLastMatch(match.phrase + " -> " + match.key.toUpperCase());
           setStatusMsg("Matched: " + match.phrase);
-          window.electronAPI?.sendKey(match.key);
+          window.electronAPI?.sendKey({ key: match.key, duration: match.duration });
         }
       });
       rec.on("partialresult", (msg: any) => {
@@ -92,16 +93,18 @@ export function VoicePanel() {
   const testKey = () => {
     setStatusMsg("Switch to game now - sending alt+n in 2s...");
     setTimeout(() => {
-      window.electronAPI?.sendKey("alt+n");
-      setStatusMsg("Sent alt+n");
+      window.electronAPI?.sendKey({ key: "alt+n", duration: 100 });
+      setStatusMsg("Sent alt+n (100ms)");
     }, 2000);
   };
 
   const add = () => {
     if (!newPhrase.trim() || !newKey.trim()) return;
-    addVoiceCommand(newPhrase.trim().toLowerCase(), newKey.trim().toLowerCase());
+    const dur = parseInt(newDuration, 10);
+    addVoiceCommand(newPhrase.trim().toLowerCase(), newKey.trim().toLowerCase(), dur > 0 ? dur : undefined);
     setNewPhrase("");
     setNewKey("");
+    setNewDuration("");
   };
 
   const statusColor =
@@ -153,7 +156,7 @@ export function VoicePanel() {
       )}
 
       <button onClick={testKey} className="text-[10px] mb-2 text-accent/50 hover:text-accent underline">
-        Test alt+n (2s delay)
+        Test alt+n 100ms (2s delay)
       </button>
 
       <ul className="space-y-1 text-xs mb-2 max-h-28 overflow-auto">
@@ -161,6 +164,7 @@ export function VoicePanel() {
           <li key={c.id} className="flex justify-between items-center">
             <span>
               {c.phrase} {"->"} <span className="text-gold">{c.key.toUpperCase()}</span>
+              {c.duration ? <span className="text-accent/40"> ({c.duration}ms)</span> : null}
             </span>
             <button onClick={() => removeVoiceCommand(c.id)} className="text-red-400/60 text-[10px]">x</button>
           </li>
@@ -180,9 +184,15 @@ export function VoicePanel() {
           placeholder="alt+n"
           className="w-16 rounded bg-ink border border-elevated px-2 py-1 text-[10px]"
         />
+        <input
+          value={newDuration}
+          onChange={(e) => setNewDuration(e.target.value)}
+          placeholder="ms"
+          className="w-10 rounded bg-ink border border-elevated px-2 py-1 text-[10px]"
+        />
         <button onClick={add} className="text-[10px] px-2 border border-elevated rounded">+</button>
       </div>
-      <p className="text-[9px] text-accent/30 mt-1">Use + for combos: alt+n, ctrl+shift+f</p>
+      <p className="text-[9px] text-accent/30 mt-1">ms = hold time (optional). Combos: alt+n</p>
     </div>
   );
 }
