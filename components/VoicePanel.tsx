@@ -90,10 +90,10 @@ export function VoicePanel() {
   const toggle = () => (listeningRef.current ? stop() : start());
 
   const testKey = () => {
-    setStatusMsg("Switch to Notepad now - sending T in 2s...");
+    setStatusMsg("Switch to game now - sending alt+n in 2s...");
     setTimeout(() => {
-      window.electronAPI?.sendKey("t");
-      setStatusMsg("Sent T");
+      window.electronAPI?.sendKey("alt+n");
+      setStatusMsg("Sent alt+n");
     }, 2000);
   };
 
@@ -153,7 +153,7 @@ export function VoicePanel() {
       )}
 
       <button onClick={testKey} className="text-[10px] mb-2 text-accent/50 hover:text-accent underline">
-        Test key send (T) - 2s delay
+        Test alt+n (2s delay)
       </button>
 
       <ul className="space-y-1 text-xs mb-2 max-h-28 overflow-auto">
@@ -177,11 +177,12 @@ export function VoicePanel() {
         <input
           value={newKey}
           onChange={(e) => setNewKey(e.target.value)}
-          placeholder="key"
-          className="w-12 rounded bg-ink border border-elevated px-2 py-1 text-[10px]"
+          placeholder="alt+n"
+          className="w-16 rounded bg-ink border border-elevated px-2 py-1 text-[10px]"
         />
         <button onClick={add} className="text-[10px] px-2 border border-elevated rounded">+</button>
       </div>
+      <p className="text-[9px] text-accent/30 mt-1">Use + for combos: alt+n, ctrl+shift+f</p>
     </div>
   );
 }
