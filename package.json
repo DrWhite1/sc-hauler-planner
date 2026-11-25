@@ -47,7 +47,8 @@
     "lucide-react": "^0.460.0",
     "clsx": "^2.1.1",
     "tailwind-merge": "^2.5.4",
-    "tesseract.js": "^5.1.1"
+    "tesseract.js": "^5.1.1",
+    "vosk": "^0.3.39"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
