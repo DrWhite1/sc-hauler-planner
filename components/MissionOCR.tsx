@@ -79,7 +79,8 @@ export function MissionOCR() {
         maxContainerSize: result.maxContainerSize,
       });
       const legNote = result.legs.length > 2 ? ` · ${result.legs.length} legs` : "";
-      setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC${legNote}`);
+      const note = result.notes.length ? ` · ${result.notes.join("; ")}` : "";
+      setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC${legNote}${note}`);
     },
     [addMission]
   );
@@ -306,7 +307,7 @@ export function MissionOCR() {
         <div className="mt-3 text-xs space-y-1 text-accent/80">
           {parsed.collects.map((c, i) => (
             <div key={`c${i}`}>
-              Collect {c.commodity} from {c.location}
+              Collect {c.scuEstimated ? "≈" : ""}{c.scu || "?"} SCU {c.commodity} from {c.location}
             </div>
           ))}
           {parsed.delivers.map((d, i) => (

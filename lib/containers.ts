@@ -103,6 +103,7 @@ export type StopLike = {
   scu: number;
   missionId: string;
   commodity?: string;
+  scuEstimated?: boolean;
   cargoAfter?: number;
 };
 
@@ -126,6 +127,7 @@ export type StopGroup<S extends StopLike = StopLike> = {
   boxes: BoxCount[]; // combined over all missions at this stop
   perMission: MissionBoxes[];
   assumed: boolean; // true if any mission's max container size was assumed
+  estimated: boolean; // true if any amount here is an even split of a multi-pickup delivery
   cargoAfter?: number;
 };
 
@@ -169,6 +171,7 @@ export function groupStopsWithBoxes<S extends StopLike>(
         boxes: [],
         perMission: [],
         assumed: false,
+        estimated: false,
       };
       groups.push(group);
     }
@@ -179,6 +182,7 @@ export function groupStopsWithBoxes<S extends StopLike>(
     group.scu += stop.scu;
     group.cargoAfter = stop.cargoAfter;
     group.assumed = group.assumed || sb.assumed;
+    group.estimated = group.estimated || !!stop.scuEstimated;
     group.boxes = mergeBreakdowns(group.boxes, sb.boxes);
 
     let pm = group.perMission.find((p) => p.missionId === stop.missionId);

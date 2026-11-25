@@ -7,6 +7,7 @@ export type Leg = {
   location: string;
   scu: number;
   commodity?: string;
+  scuEstimated?: boolean; // even split of a delivery over several pickups (amount not stated)
 };
 
 export type Mission = {

@@ -130,7 +130,12 @@ export function RouteView() {
                   <span className="text-[9px] text-accent/40 whitespace-nowrap">{g.perMission.length} missions</span>
                 )}
                 <span className="ml-auto text-[11px] text-accent/40 tabular-nums whitespace-nowrap">
-                  {g.type === "pickup" ? "+" : "−"}{g.scu} → {g.cargoAfter}
+                  <span
+                    title={g.estimated ? "Amount per pickup is not stated in the contract: the delivery is split evenly over its pickups" : undefined}
+                  >
+                    {g.type === "pickup" ? "+" : "−"}{g.estimated ? "≈" : ""}{g.scu}
+                  </span>{" "}
+                  → {g.cargoAfter}
                 </span>
               </div>
               <div
