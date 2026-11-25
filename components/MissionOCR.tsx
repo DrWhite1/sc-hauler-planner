@@ -33,6 +33,17 @@ function parseContractText(text: string) {
     reward = Math.max(...candidates);
   }
 
+  // Container size: "X SCU or smaller", "containers X SCU", "at most X SCU"
+  let maxContainerSize = 0;
+  const containerMatch =
+    full.match(/(\d+)\s*SCU\s+or\s+smaller/i) ||
+    full.match(/containers?\s+(?:of\s+)?(\d+)\s*SCU/i) ||
+    full.match(/at\s+most\s+(?:the\s+)?containers?\s+will\s+be\s+(\d+)\s*SCU/i) ||
+    full.match(/(\d+)\s*SCU\s+in\s+size/i);
+  if (containerMatch) {
+    maxContainerSize = parseInt(containerMatch[1], 10);
+  }
+
   const collects: { commodity: string; location: string; scu: number }[] = [];
   const delivers: { commodity: string; location: string; scu: number }[] = [];
 
@@ -60,7 +71,6 @@ function parseContractText(text: string) {
   const pickup = pickupLocs.length ? pickupLocs.slice(0, 2).join(" + ") : "";
   const dropoff = dropoffLocs.length ? dropoffLocs.join(" + ") : "";
 
-  // Build legs for multi-stop
   const legs: Leg[] = [];
   for (const c of collects) {
     legs.push({ type: "pickup", location: c.location, scu: c.scu || Math.round(totalScu / Math.max(1, collects.length)), commodity: c.commodity });
@@ -77,6 +87,7 @@ function parseContractText(text: string) {
     collects,
     delivers,
     legs,
+    maxContainerSize: maxContainerSize || undefined,
     lines,
   };
 }
@@ -114,8 +125,10 @@ export function MissionOCR() {
           scu: result.totalScu,
           corporation: "Covalex",
           legs: result.legs.length > 0 ? result.legs : undefined,
+          maxContainerSize: result.maxContainerSize,
         });
-        setStatus(`Added: ${result.totalScu} SCU · ${result.reward.toLocaleString()} aUEC${result.legs.length > 2 ? ` · ${result.legs.length} legs` : ""}`);
+        const sizeNote = result.maxContainerSize ? ` · ${result.maxContainerSize} SCU boxes` : "";
+        setStatus(`Added: ${result.totalScu} SCU · ${result.reward.toLocaleString()} aUEC${result.legs.length > 2 ? ` · ${result.legs.length} legs` : ""}${sizeNote}`);
       } else {
         setStatus("Partial data found — review below and add manually if needed");
       }
@@ -188,6 +201,9 @@ export function MissionOCR() {
               Deliver {d.scu} SCU {d.commodity} to {d.location}
             </div>
           ))}
+          {parsed.maxContainerSize && (
+            <div className="text-gold">Max container: {parsed.maxContainerSize} SCU</div>
+          )}
         </div>
       )}
 
