@@ -50,14 +50,33 @@ function findAhk() {
   return null;
 }
 
+function toAhkKey(combo) {
+  const parts = combo.toLowerCase().split("+").map((s) => s.trim());
+  const mods = [];
+  let key = "";
+  for (const p of parts) {
+    if (p === "alt") mods.push("!");
+    else if (p === "ctrl" || p === "control") mods.push("^");
+    else if (p === "shift") mods.push("+");
+    else if (p === "win" || p === "windows") mods.push("#");
+    else key = p;
+  }
+  if (!key) return null;
+  return mods.join("") + key;
+}
+
 function sendKey(key) {
-  const k = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
-  if (!k) return;
+  const ahkKey = toAhkKey(key);
+  if (!ahkKey) {
+    console.log("invalid key combo:", key);
+    return;
+  }
 
   if (process.platform !== "win32") {
-    exec(`xdotool key ${k}`, (err) => {
+    const xdo = key.toLowerCase().replace(/\+/g, "+").replace(/alt/g, "alt").replace(/ctrl/g, "ctrl");
+    exec(`xdotool key ${xdo}`, (err) => {
       if (err) console.log("Linux: install xdotool with 'sudo apt install xdotool'");
-      else console.log("xdotool sent:", k);
+      else console.log("xdotool sent:", key);
     });
     return;
   }
@@ -68,13 +87,13 @@ function sendKey(key) {
     return;
   }
 
-  const script = `#Requires AutoHotkey v2.0\nSendMode "Input"\nSend "{${k}}"\nExitApp\n`;
+  const script = `#Requires AutoHotkey v2.0\nSendMode "Input"\nSend "${ahkKey}"\nExitApp\n`;
   const tmp = path.join(os.tmpdir(), `sc-key-${Date.now()}.ahk`);
   fs.writeFileSync(tmp, script);
 
   exec(`"${ahk}" "${tmp}"`, (err) => {
     if (err) console.log("ahk error:", err.message);
-    else console.log("ahk sent:", k);
+    else console.log("ahk sent:", key, "->", ahkKey);
     try { fs.unlinkSync(tmp); } catch {}
   });
 }
