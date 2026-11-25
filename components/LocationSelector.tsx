@@ -18,8 +18,8 @@ export function LocationSelector() {
       >
         <option value="">Select station...</option>
         {LOCATIONS.map((loc) => (
-          <option key={loc} value={loc}>
-            {loc}
+          <option key={loc.name} value={loc.name}>
+            {loc.name}{loc.externalPort ? " (ext)" : ""}
           </option>
         ))}
       </select>
