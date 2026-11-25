@@ -20,7 +20,13 @@ export type Mission = {
   legs?: Leg[];
   availableMinutes?: number;
   addedAt?: number;
-  maxContainerSize?: number; // largest container in this contract (SCU)
+  maxContainerSize?: number;
+};
+
+export type VoiceCommand = {
+  id: string;
+  phrase: string;
+  key: string;
 };
 
 type State = {
@@ -28,6 +34,7 @@ type State = {
   currentLocation: string;
   missions: Mission[];
   completedStops: string[];
+  voiceCommands: VoiceCommand[];
   setShip: (ship: Ship | null) => void;
   setCurrentLocation: (loc: string) => void;
   addMission: (mission: Omit<Mission, "id">) => void;
@@ -36,11 +43,23 @@ type State = {
   clearMissions: () => void;
   toggleStop: (key: string) => void;
   clearProgress: () => void;
+  setVoiceCommands: (cmds: VoiceCommand[]) => void;
+  addVoiceCommand: (phrase: string, key: string) => void;
+  removeVoiceCommand: (id: string) => void;
 };
 
 function generateId(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
+
+const defaultVoice: VoiceCommand[] = [
+  { id: "1", phrase: "open doors", key: "o" },
+  { id: "2", phrase: "close doors", key: "o" },
+  { id: "3", phrase: "request docking", key: "n" },
+  { id: "4", phrase: "landing gear", key: "n" },
+  { id: "5", phrase: "quantum drive", key: "b" },
+  { id: "6", phrase: "exit seat", key: "y" },
+];
 
 export const useHaulerStore = create<State>()(
   persist(
@@ -49,6 +68,7 @@ export const useHaulerStore = create<State>()(
       currentLocation: "",
       missions: [],
       completedStops: [],
+      voiceCommands: defaultVoice,
       setShip: (ship) => set({ selectedShip: ship }),
       setCurrentLocation: (loc) => set({ currentLocation: loc }),
       addMission: (mission) =>
@@ -77,6 +97,15 @@ export const useHaulerStore = create<State>()(
             : [...state.completedStops, key],
         })),
       clearProgress: () => set({ completedStops: [] }),
+      setVoiceCommands: (cmds) => set({ voiceCommands: cmds }),
+      addVoiceCommand: (phrase, key) =>
+        set((state) => ({
+          voiceCommands: [...state.voiceCommands, { id: generateId(), phrase, key }],
+        })),
+      removeVoiceCommand: (id) =>
+        set((state) => ({
+          voiceCommands: state.voiceCommands.filter((c) => c.id !== id),
+        })),
     }),
     { name: "sc-hauler-store" }
   )
