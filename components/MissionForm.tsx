@@ -12,6 +12,7 @@ export function MissionForm() {
     scu: "",
     corporation: "Covalex",
     availableMinutes: "",
+    maxContainerSize: "",
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -25,9 +26,18 @@ export function MissionForm() {
       scu: Number(form.scu),
       corporation: form.corporation,
       availableMinutes: form.availableMinutes ? Number(form.availableMinutes) : undefined,
+      maxContainerSize: form.maxContainerSize ? Number(form.maxContainerSize) : undefined,
     });
 
-    setForm({ pickup: "", dropoff: "", reward: "", scu: "", corporation: "Covalex", availableMinutes: "" });
+    setForm({
+      pickup: "",
+      dropoff: "",
+      reward: "",
+      scu: "",
+      corporation: "Covalex",
+      availableMinutes: "",
+      maxContainerSize: "",
+    });
   };
 
   return (
@@ -86,6 +96,14 @@ export function MissionForm() {
           className="rounded bg-ink border border-elevated px-2 py-1.5 text-sm"
         />
       </div>
+
+      <input
+        type="number"
+        placeholder="Max container size (SCU)"
+        value={form.maxContainerSize}
+        onChange={(e) => setForm({ ...form, maxContainerSize: e.target.value })}
+        className="w-full rounded bg-ink border border-elevated px-2 py-1.5 text-sm"
+      />
 
       <button
         type="submit"
