@@ -6,7 +6,10 @@ import { createModel } from "vosk-browser";
 
 declare global {
   interface Window {
-    electronAPI?: { sendKey: (payload: string | { key: string; duration?: number }) => void };
+    electronAPI?: {
+      sendKey: (payload: string | { key: string; duration?: number }) => void;
+      captureScreenshot: () => Promise<string | null>;
+    };
   }
 }
 
@@ -41,6 +44,26 @@ export function VoicePanel() {
     }
   };
 
+  const captureAndOCR = async () => {
+    setStatusMsg("Capturing screenshot...");
+    try {
+      const b64 = await window.electronAPI?.captureScreenshot();
+      if (!b64) {
+        setStatusMsg("Screenshot failed");
+        return;
+      }
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const blob = new Blob([bytes], { type: "image/png" });
+      const file = new File([blob], "screenshot.png", { type: "image/png" });
+      window.dispatchEvent(new CustomEvent("ocr-screenshot", { detail: file }));
+      setStatusMsg("Screenshot sent to OCR");
+    } catch (err) {
+      setStatusMsg("Screenshot error: " + String(err));
+    }
+  };
+
   const start = async () => {
     if (!model) return;
     try {
@@ -49,7 +72,14 @@ export function VoicePanel() {
         const text = msg.result?.text || "";
         if (!text) return;
         setLastHeard(text);
-        const match = voiceCommands.find((c) => text.toLowerCase().includes(c.phrase.toLowerCase()));
+        const lower = text.toLowerCase();
+        if (lower.includes("screenshot")) {
+          setLastMatch("screenshot -> OCR");
+          setStatusMsg("Screenshot command");
+          captureAndOCR();
+          return;
+        }
+        const match = voiceCommands.find((c) => lower.includes(c.phrase.toLowerCase()));
         if (match) {
           setLastMatch(match.phrase + " -> " + match.key.toUpperCase());
           setStatusMsg("Matched: " + match.phrase);
@@ -192,7 +222,7 @@ export function VoicePanel() {
         />
         <button onClick={add} className="text-[10px] px-2 border border-elevated rounded">+</button>
       </div>
-      <p className="text-[9px] text-accent/30 mt-1">ms = hold time (optional). Combos: alt+n</p>
+      <p className="text-[9px] text-accent/30 mt-1">Say "screenshot" to OCR the screen. ms = hold time.</p>
     </div>
   );
 }
