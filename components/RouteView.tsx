@@ -1,14 +1,19 @@
 "use client";
 
+import { useMemo } from "react";
 import { useHaulerStore } from "@/lib/store";
 import { planRoute } from "@/lib/optimizer";
 
 export function RouteView() {
   const { missions, selectedShip, currentLocation } = useHaulerStore();
-  const route =
-    missions.length > 0 && selectedShip
-      ? planRoute(missions, selectedShip, currentLocation)
-      : null;
+
+  const route = useMemo(
+    () =>
+      missions.length > 0 && selectedShip
+        ? planRoute(missions, selectedShip, currentLocation)
+        : null,
+    [missions, selectedShip, currentLocation]
+  );
 
   if (!selectedShip) {
     return (
