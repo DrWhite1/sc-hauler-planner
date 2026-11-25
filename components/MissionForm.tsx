@@ -11,6 +11,7 @@ export function MissionForm() {
     reward: "",
     scu: "",
     corporation: "Covalex",
+    availableMinutes: "",
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -23,9 +24,10 @@ export function MissionForm() {
       reward: Number(form.reward),
       scu: Number(form.scu),
       corporation: form.corporation,
+      availableMinutes: form.availableMinutes ? Number(form.availableMinutes) : undefined,
     });
 
-    setForm({ pickup: "", dropoff: "", reward: "", scu: "", corporation: "Covalex" });
+    setForm({ pickup: "", dropoff: "", reward: "", scu: "", corporation: "Covalex", availableMinutes: "" });
   };
 
   return (
@@ -66,15 +68,24 @@ export function MissionForm() {
         />
       </div>
 
-      <select
-        value={form.corporation}
-        onChange={(e) => setForm({ ...form, corporation: e.target.value })}
-        className="w-full rounded bg-ink border border-elevated px-2 py-1.5 text-sm"
-      >
-        <option>Covalex</option>
-        <option>Ling Family</option>
-        <option>Red Wind</option>
-      </select>
+      <div className="grid grid-cols-2 gap-2">
+        <select
+          value={form.corporation}
+          onChange={(e) => setForm({ ...form, corporation: e.target.value })}
+          className="rounded bg-ink border border-elevated px-2 py-1.5 text-sm"
+        >
+          <option>Covalex</option>
+          <option>Ling Family</option>
+          <option>Red Wind</option>
+        </select>
+        <input
+          type="number"
+          placeholder="Time left (min)"
+          value={form.availableMinutes}
+          onChange={(e) => setForm({ ...form, availableMinutes: e.target.value })}
+          className="rounded bg-ink border border-elevated px-2 py-1.5 text-sm"
+        />
+      </div>
 
       <button
         type="submit"
