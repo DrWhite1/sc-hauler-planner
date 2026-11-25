@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { ShipSelector } from "@/components/ShipSelector";
 import { LocationSelector } from "@/components/LocationSelector";
 import { MissionProgress } from "@/components/MissionProgress";
@@ -11,6 +11,7 @@ import { RouteMap } from "@/components/RouteMap";
 import { PackingView } from "@/components/PackingView";
 import { CargoGrid } from "@/components/CargoGrid";
 import { useHaulerStore, type Mission } from "@/lib/store";
+import { planRoute } from "@/lib/optimizer";
 
 function remainingMinutes(m: Mission): number | null {
   if (!m.availableMinutes || !m.addedAt) return null;
@@ -19,7 +20,7 @@ function remainingMinutes(m: Mission): number | null {
 }
 
 export default function Home() {
-  const { missions, selectedShip, clearMissions, updateMission, removeMission } = useHaulerStore();
+  const { missions, selectedShip, currentLocation, clearMissions, updateMission, removeMission, completedStops } = useHaulerStore();
   const [editing, setEditing] = useState<Mission | null>(null);
   const [, setTick] = useState(0);
 
@@ -37,19 +38,42 @@ export default function Home() {
   const containerTooBig = (m: Mission) =>
     selectedShip && m.maxContainerSize && m.maxContainerSize > selectedShip.maxContainer;
 
+  const progress = useMemo(() => {
+    if (!selectedShip || missions.length === 0) return { done: 0, total: 0 };
+    const route = planRoute(missions, selectedShip, currentLocation);
+    const total = route.stops.length;
+    const done = route.stops.filter((s) =>
+      completedStops.includes(`${s.missionId}:${s.type}:${s.location}`)
+    ).length;
+    return { done, total };
+  }, [missions, selectedShip, currentLocation, completedStops]);
+
+  const pct = progress.total > 0 ? Math.round((progress.done / progress.total) * 100) : 0;
+
   return (
     <main className="container mx-auto px-4 py-8 max-w-6xl">
-      <header className="mb-8 border-b border-elevated pb-6">
+      <header className="mb-6 border-b border-elevated pb-5">
         <h1 className="text-3xl font-bold tracking-tight text-gold">
           SC Hauler Planner
         </h1>
-        <p className="mt-2 text-accent/70">
+        <p className="mt-1 text-sm text-accent/60">
           Stack contracts, optimize routes, maximize aUEC/hour
         </p>
+        {progress.total > 0 && (
+          <div className="mt-3">
+            <div className="flex justify-between text-[10px] text-accent/50 mb-1">
+              <span>Run progress</span>
+              <span>{progress.done}/{progress.total} stops · {pct}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-ink overflow-hidden">
+              <div className="h-full bg-gold transition-all" style={{ width: `${pct}%` }} />
+            </div>
+          </div>
+        )}
       </header>
 
       <div className="grid gap-6 md:grid-cols-3">
-        <div className="md:col-span-1 space-y-6">
+        <div className="md:col-span-1 space-y-5">
           <ShipSelector />
           <LocationSelector />
           <MissionProgress />
@@ -58,48 +82,61 @@ export default function Home() {
         </div>
 
         <div className="md:col-span-2">
-          <div className="rounded-lg border border-elevated bg-elevated/50 p-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold">Active Missions ({missions.length})</h2>
+          <div className="rounded-lg border border-elevated bg-elevated/40 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-sm font-medium uppercase tracking-wider text-accent/60">
+                Active Missions ({missions.length})
+              </h2>
               {missions.length > 0 && (
                 <button
                   onClick={clearMissions}
-                  className="text-sm text-red-400 hover:text-red-300"
+                  className="text-xs text-red-400 hover:text-red-300"
                 >
                   Clear all
                 </button>
               )}
             </div>
             {missions.length === 0 ? (
-              <p className="text-accent/50 text-sm">Add missions to plan a route.</p>
+              <p className="text-accent/40 text-sm">Add missions to plan a route.</p>
             ) : (
-              <ul className="space-y-2 text-sm">
+              <ul className="space-y-2">
                 {missions.map((m) => {
                   const left = remainingMinutes(m);
                   const tooBig = containerTooBig(m);
                   return (
-                    <li key={m.id} className="border-b border-ink/50 py-2">
+                    <li key={m.id}>
                       <button
                         onClick={() => setEditing(m)}
-                        className="w-full text-left hover:bg-ink/40 rounded px-1 -mx-1"
+                        className="w-full text-left rounded-md border border-elevated bg-ink/40 hover:bg-ink/70 px-3 py-2.5 transition"
                       >
-                        <div className="flex justify-between">
-                          <span>{m.pickup} → {m.dropoff}</span>
-                          <span className="text-gold">{m.reward.toLocaleString()} aUEC · {m.scu} SCU</span>
-                        </div>
-                        <div className="flex justify-between text-[10px] text-accent/50 mt-0.5">
-                          <span>
-                            {m.legs && m.legs.length > 2 && `${m.legs.length} legs`}
-                            {m.maxContainerSize && ` · ${m.maxContainerSize} SCU boxes`}
-                          </span>
-                          {left !== null && (
-                            <span className={left < 30 ? "text-red-400" : ""}>
-                              {left === 0 ? "Expired" : `${left} min left`}
-                            </span>
-                          )}
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-sm truncate">{m.pickup} → {m.dropoff}</div>
+                            <div className="flex flex-wrap gap-1.5 mt-1.5">
+                              {m.legs && m.legs.length > 2 && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-elevated text-accent/60">
+                                  {m.legs.length} legs
+                                </span>
+                              )}
+                              {m.maxContainerSize && (
+                                <span className="text-[9px] px-1.5 py-0.5 rounded bg-elevated text-accent/60">
+                                  {m.maxContainerSize} SCU boxes
+                                </span>
+                              )}
+                              {left !== null && (
+                                <span className={`text-[9px] px-1.5 py-0.5 rounded ${left < 30 ? "bg-red-900/40 text-red-300" : "bg-elevated text-accent/60"}`}>
+                                  {left === 0 ? "Expired" : `${left} min`}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                          <div className="text-right flex-shrink-0">
+                            <div className="text-gold text-sm font-medium">{m.reward.toLocaleString()}</div>
+                            <div className="text-[10px] text-accent/50">{m.scu} SCU</div>
+                          </div>
                         </div>
                         {tooBig && (
-                          <div className="text-[10px] text-red-400 mt-0.5">
+                          <div className="text-[10px] text-red-400 mt-1.5">
                             Container too big for {selectedShip?.name} (max {selectedShip?.maxContainer} SCU)
                           </div>
                         )}
@@ -190,7 +227,7 @@ export default function Home() {
             </div>
           )}
 
-          <div className="mt-6">
+          <div className="mt-5">
             <RouteView />
             <RouteMap />
             <PackingView />
