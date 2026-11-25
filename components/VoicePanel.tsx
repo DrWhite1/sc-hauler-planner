@@ -172,7 +172,9 @@ export function VoicePanel() {
       <ul className="space-y-1 text-xs mb-2 max-h-28 overflow-auto">
         {voiceCommands.map((c) => (
           <li key={c.id} className="flex justify-between items-center">
-            <span>"{c.phrase}" -> <span className="text-gold">{c.key.toUpperCase()}</span></span>
+            <span>
+              {c.phrase} -> <span className="text-gold">{c.key.toUpperCase()}</span>
+            </span>
             <button onClick={() => removeVoiceCommand(c.id)} className="text-red-400/60 text-[10px]">x</button>
           </li>
         ))}
