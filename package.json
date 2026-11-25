@@ -2,11 +2,42 @@
   "name": "sc-hauler-planner",
   "version": "0.1.0",
   "private": true,
+  "description": "Star Citizen hauler mission planner",
+  "author": "DrWhite1",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "electron:dev": "NODE_ENV=development electron .",
+    "electron:build": "next build && electron-builder",
+    "dist:win": "next build && electron-builder --win",
+    "dist:linux": "next build && electron-builder --linux"
+  },
+  "build": {
+    "appId": "com.drwhite1.schaulerplanner",
+    "productName": "SC Hauler Planner",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "electron/**/*",
+      "out/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": ["nsis"],
+      "icon": null
+    },
+    "linux": {
+      "target": ["AppImage"],
+      "category": "Utility"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
   },
   "dependencies": {
     "next": "^15.0.0",
@@ -23,6 +54,8 @@
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
     "autoprefixer": "^10.4.20",
+    "electron": "^33.0.0",
+    "electron-builder": "^25.1.0",
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.0"
