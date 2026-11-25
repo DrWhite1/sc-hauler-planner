@@ -4,7 +4,10 @@ export type Location = {
   // elevators, so ships that cannot enter a hangar (e.g. Hull C) can load there ("EXT").
   // Checked against UEX Corp (has_loading_dock) and community sources for 4.10.3, Nov 2026.
   externalPort: boolean;
+  system?: StarSystem; // defaults to Stanton
 };
+
+export type StarSystem = "Stanton" | "Pyro" | "Nyx";
 
 export const LOCATIONS: Location[] = [
   // Stanton - Main stations (Everus, Tressler and Seraphim have cargo decks)
@@ -46,24 +49,24 @@ export const LOCATIONS: Location[] = [
   { name: "Nyx Gateway", externalPort: true },
   { name: "Terra Gateway", externalPort: true },
   { name: "Magnus Gateway", externalPort: true }, // verified in game
-  { name: "Stanton Gateway (Pyro)", externalPort: true },
-  { name: "Nyx Gateway (Pyro)", externalPort: false },
-  { name: "Stanton Gateway (Nyx)", externalPort: false },
+  { name: "Stanton Gateway (Pyro)", externalPort: true, system: "Pyro" },
+  { name: "Nyx Gateway (Pyro)", externalPort: false, system: "Pyro" },
+  { name: "Stanton Gateway (Nyx)", externalPort: false, system: "Nyx" },
 
   // Pyro stations (Ruin, Checkmate, Orbituary, Gaslight and Megumi have cargo decks)
-  { name: "Ruin Station", externalPort: true },
-  { name: "Checkmate", externalPort: true },
-  { name: "Orbituary", externalPort: true },
-  { name: "Gaslight", externalPort: true },
-  { name: "Starlight Service Station", externalPort: false },
-  { name: "Dudley & Daughters", externalPort: false },
-  { name: "Patch City", externalPort: false },
-  { name: "Megumi Refueling", externalPort: true },
-  { name: "Endgame", externalPort: false },
-  { name: "Rod's Fuel 'N Supplies", externalPort: false },
+  { name: "Ruin Station", externalPort: true, system: "Pyro" },
+  { name: "Checkmate", externalPort: true, system: "Pyro" },
+  { name: "Orbituary", externalPort: true, system: "Pyro" },
+  { name: "Gaslight", externalPort: true, system: "Pyro" },
+  { name: "Starlight Service Station", externalPort: false, system: "Pyro" },
+  { name: "Dudley & Daughters", externalPort: false, system: "Pyro" },
+  { name: "Patch City", externalPort: false, system: "Pyro" },
+  { name: "Megumi Refueling", externalPort: true, system: "Pyro" },
+  { name: "Endgame", externalPort: false, system: "Pyro" },
+  { name: "Rod's Fuel 'N Supplies", externalPort: false, system: "Pyro" },
 
   // Other
-  { name: "Levski", externalPort: true },
+  { name: "Levski", externalPort: true, system: "Nyx" },
   { name: "Security Post Kareah", externalPort: false },
 ];
 
@@ -93,6 +96,12 @@ export function findLocation(locationName: string): Location | undefined {
   const alias = EXTRA_NAMES[n];
   const target = alias ? normalizeLocationName(alias) : n;
   return LOCATIONS.find((l) => normalizeLocationName(l.name) === target);
+}
+
+// System a location is in, for names the planner knows; undefined for unknown names.
+export function systemOf(locationName: string): StarSystem | undefined {
+  const l = findLocation(locationName);
+  return l ? (l.system ?? "Stanton") : undefined;
 }
 
 export function hasExternalPort(locationName: string): boolean {

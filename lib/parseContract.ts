@@ -154,6 +154,10 @@ export function parseMaxContainerSize(full: string): number | undefined {
     /(\d{1,2})\s*SCU\s+(?:cargo\s+)?(?:containers?|boxes|crates)\s+(?:max(?:imum)?|or\s+smaller|or\s+less)/i,
     // "(8 SCU or smaller)", "containers of 8 SCU or smaller", "8 SCU or less"
     /(\d{1,2})\s*SCU\s*(?:\)|,)?\s*or\s+(?:smaller|less)\b/i,
+    // The briefing wraps "(8 SCU or" / "smaller)" over two lines, and the objectives column is
+    // read in between, so real OCR text puts other words inside the brackets:
+    // "(8 SCU or Collect Carbon from Gaslight. smaller)" (PaddleOCR), "(8 SCU or . Pp smaller)".
+    /\(\s*(\d{1,2})\s*SCU\s+or\b[^()]{0,80}?\b(?:smaller|less)\s*\)/i,
   ];
   for (const re of patterns) {
     const m = full.match(re);
@@ -336,7 +340,51 @@ function finalize(
 
 export type ParsedContract = ReturnType<typeof finalize>;
 
-export function parseContractText(rawText: string, knownLocations: string[] = []): ParsedContract {
+// Some names exist in more than one system: a contract in Pyro says just "Stanton Gateway",
+// which is "Stanton Gateway (Pyro)", not "Stanton Gateway (Nyx)"; "Nyx Gateway" is the Stanton
+// one in Stanton but "Nyx Gateway (Pyro)" in Pyro. Resolve such a name from the system of the
+// contract's other locations. With no or mixed context the name is left as read.
+const SYSTEM_SUFFIX = /\s*\(([^)]+)\)\s*$/;
+export function resolveAmbiguousNames(
+  names: string[],
+  knownLocations: string[],
+  systemOf: (name: string) => string | undefined
+): string[] {
+  const base = (n: string) => n.replace(SYSTEM_SUFFIX, "").trim().toLowerCase();
+  const candidatesFor = (name: string) => {
+    const b = base(name);
+    // Only a bare name is ambiguous; "Stanton Gateway (Nyx)" already says where it is.
+    if (!name || SYSTEM_SUFFIX.test(name)) return [];
+    const c = knownLocations.filter((k) => base(k) === b);
+    return c.length > 1 || (c.length === 1 && c[0] !== name) ? c : [];
+  };
+  const context = new Set<string>();
+  for (const n of names) {
+    if (!n || candidatesFor(n).length) continue;
+    const sys = systemOf(n);
+    if (sys) context.add(sys);
+  }
+  if (context.size !== 1) return names;
+  const [system] = [...context];
+  return names.map((n) => {
+    const c = candidatesFor(n);
+    if (!c.length) return n;
+    const inSystem = c.filter((k) => systemOf(k) === system);
+    return inSystem.length === 1 ? inSystem[0] : n;
+  });
+}
+
+export type ParseOptions = {
+  // System of a known location ("Stanton", "Pyro", "Nyx"), used to resolve names that exist in
+  // several systems. Without it such names are kept as read.
+  systemOf?: (name: string) => string | undefined;
+};
+
+export function parseContractText(
+  rawText: string,
+  knownLocations: string[] = [],
+  opts: ParseOptions = {}
+): ParsedContract {
   const text = cleanOcr(rawText);
   const full = text.replace(/\s+/g, " ");
 
@@ -403,6 +451,21 @@ export function parseContractText(rawText: string, knownLocations: string[] = []
     if (!fm) continue;
     const loc = matchLocation(windowAfter(full, fm.index + fm[0].length), knownLocations);
     collects.push({ commodity: d.commodity, location: loc.name, scu: 0, locationRaw: loc.raw });
+  }
+
+  if (opts.systemOf) {
+    const all = [...delivers, ...collects];
+    const resolved = resolveAmbiguousNames(
+      all.map((x) => x.location),
+      knownLocations,
+      opts.systemOf
+    );
+    all.forEach((x, i) => (x.location = resolved[i]));
+    if (suggestedPickup) {
+      suggestedPickup =
+        resolveAmbiguousNames([...all.map((x) => x.location), suggestedPickup], knownLocations, opts.systemOf).pop() ??
+        suggestedPickup;
+    }
   }
 
   const expectedDelivers = (full.match(/\bdeliver\s*[0-9OoIl]+\s*\/\s*[0-9OoIl]+/gi) ?? []).length;
