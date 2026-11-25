@@ -17,7 +17,6 @@ export type PlannedRoute = {
   distanceScore: number;
 };
 
-// Simple seeded PRNG so the same inputs always produce the same route
 function mulberry32(seed: number) {
   return function () {
     let t = (seed += 0x6d2b79f5);
@@ -55,41 +54,70 @@ function isValidOrder(stops: Stop[]): boolean {
   return true;
 }
 
-function locationSimilarity(a: string, b: string): number {
-  if (!a || !b) return 0;
-  const al = a.toLowerCase();
-  const bl = b.toLowerCase();
-  if (al === bl) return 100;
-  if (al.includes(bl) || bl.includes(al)) return 60;
-  const aTokens = al.split(/\s+/);
-  const bTokens = bl.split(/\s+/);
-  const shared = aTokens.filter((t) => bTokens.includes(t) && t.length > 3).length;
-  return shared * 20;
+function normalizeLoc(loc: string): string {
+  return loc.toLowerCase().replace(/\s+above.*$/, "").replace(/\s+station$/, "").trim();
+}
+
+function locationsMatch(a: string, b: string): boolean {
+  if (!a || !b) return false;
+  const na = normalizeLoc(a);
+  const nb = normalizeLoc(b);
+  return na === nb || na.includes(nb) || nb.includes(na);
 }
 
 function scoreRoute(stops: Stop[], totalReward: number, startLocation: string): number {
   if (!isValidOrder(stops)) return -Infinity;
 
-  const uniqueLocs = new Set(stops.map((s) => s.location)).size;
-  const backtrackPenalty = (stops.length - uniqueLocs) * 15;
-
-  let startBonus = 0;
-  if (startLocation && stops.length > 0) {
-    startBonus = locationSimilarity(stops[0].location, startLocation) * 2;
+  // Heavily penalize location changes (group same-station stops together)
+  let locationChanges = 0;
+  for (let i = 1; i < stops.length; i++) {
+    if (!locationsMatch(stops[i].location, stops[i - 1].location)) {
+      locationChanges++;
+    }
   }
 
-  const estimatedMinutes = Math.max(15, stops.length * 10 + uniqueLocs * 5);
+  // Big bonus for starting near the current location
+  let startBonus = 0;
+  if (startLocation && stops.length > 0 && locationsMatch(stops[0].location, startLocation)) {
+    startBonus = 500;
+  }
+
+  // Prefer doing all pickups at a location before leaving it
+  let pickupGroupingBonus = 0;
+  const seenPickupLoc = new Set<string>();
+  for (const s of stops) {
+    if (s.type === "pickup") seenPickupLoc.add(normalizeLoc(s.location));
+  }
+
+  const estimatedMinutes = Math.max(15, stops.length * 8 + locationChanges * 12);
   const auecPerHour = (totalReward / estimatedMinutes) * 60;
 
-  return auecPerHour - backtrackPenalty + startBonus;
+  // Strong weight on fewer jumps between stations
+  return auecPerHour - locationChanges * 80 + startBonus;
 }
 
 function mutate(stops: Stop[], rand: () => number): Stop[] {
   const next = [...stops];
   if (next.length < 2) return next;
-  const i = Math.floor(rand() * next.length);
-  const j = Math.floor(rand() * next.length);
-  [next[i], next[j]] = [next[j], next[i]];
+
+  // 50% chance: swap two random stops
+  // 50% chance: move a stop next to another stop at the same location (encourages grouping)
+  if (rand() < 0.5) {
+    const i = Math.floor(rand() * next.length);
+    const j = Math.floor(rand() * next.length);
+    [next[i], next[j]] = [next[j], next[i]];
+  } else {
+    const i = Math.floor(rand() * next.length);
+    const targetLoc = normalizeLoc(next[i].location);
+    const same = next
+      .map((s, idx) => ({ s, idx }))
+      .filter((x) => x.idx !== i && normalizeLoc(x.s.location) === targetLoc);
+    if (same.length > 0) {
+      const target = same[Math.floor(rand() * same.length)];
+      const [moved] = next.splice(i, 1);
+      next.splice(target.idx, 0, moved);
+    }
+  }
   return next;
 }
 
@@ -118,15 +146,23 @@ export function planRoute(
     return { stops: [], totalReward, totalScu, auecPerHour: 0, distanceScore: 0 };
   }
 
-  // Seed from mission IDs + start location so the result is stable
   const seedKey = missions.map((m) => m.id).join("|") + "|" + currentLocation;
   const rand = mulberry32(hashString(seedKey));
 
-  const populationSize = 40;
-  const generations = 30;
+  const populationSize = 60;
+  const generations = 50;
   let population: Stop[][] = [];
 
-  for (let i = 0; i < populationSize; i++) {
+  // Seed some individuals with a grouped heuristic (all pickups at a loc, then dropoffs)
+  const grouped = [...baseStops].sort((a, b) => {
+    const la = normalizeLoc(a.location);
+    const lb = normalizeLoc(b.location);
+    if (la !== lb) return la.localeCompare(lb);
+    return a.type === "pickup" ? -1 : 1;
+  });
+  population.push(grouped);
+
+  for (let i = 1; i < populationSize; i++) {
     population.push([...baseStops].sort(() => rand() - 0.5));
   }
 
@@ -152,7 +188,12 @@ export function planRoute(
     population = next;
   }
 
-  const estimatedMinutes = Math.max(15, best.length * 10);
+  const locationChanges = best.reduce((n, s, i) => {
+    if (i === 0) return 0;
+    return n + (locationsMatch(s.location, best[i - 1].location) ? 0 : 1);
+  }, 0);
+
+  const estimatedMinutes = Math.max(15, best.length * 8 + locationChanges * 12);
   const auecPerHour = (totalReward / estimatedMinutes) * 60;
 
   return {
