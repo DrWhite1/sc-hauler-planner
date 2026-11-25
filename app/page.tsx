@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { ShipSelector } from "@/components/ShipSelector";
 import { LocationSelector } from "@/components/LocationSelector";
 import { MissionProgress } from "@/components/MissionProgress";
@@ -9,9 +9,21 @@ import { MissionOCR } from "@/components/MissionOCR";
 import { RouteView } from "@/components/RouteView";
 import { useHaulerStore, type Mission } from "@/lib/store";
 
+function remainingMinutes(m: Mission): number | null {
+  if (!m.availableMinutes || !m.addedAt) return null;
+  const elapsed = (Date.now() - m.addedAt) / 60000;
+  return Math.max(0, Math.round(m.availableMinutes - elapsed));
+}
+
 export default function Home() {
   const { missions, selectedShip, clearMissions, updateMission, removeMission } = useHaulerStore();
   const [editing, setEditing] = useState<Mission | null>(null);
+  const [, setTick] = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 30000);
+    return () => clearInterval(id);
+  }, []);
 
   const saveEdit = () => {
     if (!editing) return;
@@ -56,24 +68,30 @@ export default function Home() {
               <p className="text-accent/50 text-sm">Add missions to plan a route.</p>
             ) : (
               <ul className="space-y-2 text-sm">
-                {missions.map((m) => (
-                  <li key={m.id} className="border-b border-ink/50 py-2">
-                    <button
-                      onClick={() => setEditing(m)}
-                      className="w-full text-left hover:bg-ink/40 rounded px-1 -mx-1"
-                    >
-                      <div className="flex justify-between">
-                        <span>{m.pickup} → {m.dropoff}</span>
-                        <span className="text-gold">{m.reward.toLocaleString()} aUEC · {m.scu} SCU</span>
-                      </div>
-                      {m.legs && m.legs.length > 2 && (
-                        <div className="text-[10px] text-accent/50 mt-0.5">
-                          {m.legs.length} legs
+                {missions.map((m) => {
+                  const left = remainingMinutes(m);
+                  return (
+                    <li key={m.id} className="border-b border-ink/50 py-2">
+                      <button
+                        onClick={() => setEditing(m)}
+                        className="w-full text-left hover:bg-ink/40 rounded px-1 -mx-1"
+                      >
+                        <div className="flex justify-between">
+                          <span>{m.pickup} → {m.dropoff}</span>
+                          <span className="text-gold">{m.reward.toLocaleString()} aUEC · {m.scu} SCU</span>
                         </div>
-                      )}
-                    </button>
-                  </li>
-                ))}
+                        <div className="flex justify-between text-[10px] text-accent/50 mt-0.5">
+                          {m.legs && m.legs.length > 2 && <span>{m.legs.length} legs</span>}
+                          {left !== null && (
+                            <span className={left < 30 ? "text-red-400" : ""}>
+                              {left === 0 ? "Expired" : `${left} min left`}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </div>
@@ -95,7 +113,7 @@ export default function Home() {
                   placeholder="Dropoff"
                 />
               </div>
-              <div className="grid grid-cols-2 gap-2 mb-3">
+              <div className="grid grid-cols-2 gap-2 mb-2">
                 <input
                   type="number"
                   value={editing.reward}
@@ -109,6 +127,20 @@ export default function Home() {
                   onChange={(e) => setEditing({ ...editing, scu: Number(e.target.value) })}
                   className="rounded bg-ink border border-elevated px-2 py-1"
                   placeholder="SCU"
+                />
+              </div>
+              <div className="mb-3">
+                <input
+                  type="number"
+                  value={editing.availableMinutes ?? ""}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      availableMinutes: e.target.value ? Number(e.target.value) : undefined,
+                    })
+                  }
+                  className="w-full rounded bg-ink border border-elevated px-2 py-1"
+                  placeholder="Time left (minutes)"
                 />
               </div>
               <div className="flex gap-2">
