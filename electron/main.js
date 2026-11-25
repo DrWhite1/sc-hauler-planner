@@ -62,21 +62,29 @@ function toAhkKey(combo) {
     else key = p;
   }
   if (!key) return null;
-  return mods.join("") + key;
+  return { mods: mods.join(""), key };
 }
 
-function sendKey(key) {
-  const ahkKey = toAhkKey(key);
-  if (!ahkKey) {
+function sendKey(key, duration) {
+  const parsed = toAhkKey(key);
+  if (!parsed) {
     console.log("invalid key combo:", key);
     return;
   }
 
+  const hold = Math.max(0, parseInt(duration, 10) || 0);
+  const ahkSend = hold > 0
+    ? `Send "${parsed.mods}{${parsed.key} down}"\nSleep ${hold}\nSend "${parsed.mods}{${parsed.key} up}"`
+    : `Send "${parsed.mods}${parsed.key}"`;
+
   if (process.platform !== "win32") {
-    const xdo = key.toLowerCase().replace(/\+/g, "+").replace(/alt/g, "alt").replace(/ctrl/g, "ctrl");
-    exec(`xdotool key ${xdo}`, (err) => {
+    const xdo = key.toLowerCase();
+    const cmd = hold > 0
+      ? `xdotool keydown ${xdo}; sleep ${hold / 1000}; xdotool keyup ${xdo}`
+      : `xdotool key ${xdo}`;
+    exec(cmd, (err) => {
       if (err) console.log("Linux: install xdotool with 'sudo apt install xdotool'");
-      else console.log("xdotool sent:", key);
+      else console.log("xdotool sent:", key, hold ? `(${hold}ms)` : "");
     });
     return;
   }
@@ -87,18 +95,22 @@ function sendKey(key) {
     return;
   }
 
-  const script = `#Requires AutoHotkey v2.0\nSendMode "Input"\nSend "${ahkKey}"\nExitApp\n`;
+  const script = `#Requires AutoHotkey v2.0\nSendMode "Input"\n${ahkSend}\nExitApp\n`;
   const tmp = path.join(os.tmpdir(), `sc-key-${Date.now()}.ahk`);
   fs.writeFileSync(tmp, script);
 
   exec(`"${ahk}" "${tmp}"`, (err) => {
     if (err) console.log("ahk error:", err.message);
-    else console.log("ahk sent:", key, "->", ahkKey);
+    else console.log("ahk sent:", key, hold ? `(${hold}ms)` : "");
     try { fs.unlinkSync(tmp); } catch {}
   });
 }
 
-ipcMain.on("send-key", (_e, key) => sendKey(key));
+ipcMain.on("send-key", (_e, payload) => {
+  const key = typeof payload === "string" ? payload : payload.key;
+  const duration = typeof payload === "object" ? payload.duration : 0;
+  sendKey(key, duration);
+});
 
 ipcMain.handle("vosk-status", () => ({
   ready: voice.isModelReady(),
