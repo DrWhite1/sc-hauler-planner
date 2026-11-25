@@ -31,6 +31,9 @@ export default function Home() {
     setEditing(null);
   };
 
+  const containerTooBig = (m: Mission) =>
+    selectedShip && m.maxContainerSize && m.maxContainerSize > selectedShip.maxContainer;
+
   return (
     <main className="container mx-auto px-4 py-8 max-w-6xl">
       <header className="mb-8 border-b border-elevated pb-6">
@@ -70,6 +73,7 @@ export default function Home() {
               <ul className="space-y-2 text-sm">
                 {missions.map((m) => {
                   const left = remainingMinutes(m);
+                  const tooBig = containerTooBig(m);
                   return (
                     <li key={m.id} className="border-b border-ink/50 py-2">
                       <button
@@ -81,13 +85,21 @@ export default function Home() {
                           <span className="text-gold">{m.reward.toLocaleString()} aUEC · {m.scu} SCU</span>
                         </div>
                         <div className="flex justify-between text-[10px] text-accent/50 mt-0.5">
-                          {m.legs && m.legs.length > 2 && <span>{m.legs.length} legs</span>}
+                          <span>
+                            {m.legs && m.legs.length > 2 && `${m.legs.length} legs`}
+                            {m.maxContainerSize && ` · ${m.maxContainerSize} SCU boxes`}
+                          </span>
                           {left !== null && (
                             <span className={left < 30 ? "text-red-400" : ""}>
                               {left === 0 ? "Expired" : `${left} min left`}
                             </span>
                           )}
                         </div>
+                        {tooBig && (
+                          <div className="text-[10px] text-red-400 mt-0.5">
+                            Container too big for {selectedShip?.name} (max {selectedShip?.maxContainer} SCU)
+                          </div>
+                        )}
                       </button>
                     </li>
                   );
@@ -129,7 +141,7 @@ export default function Home() {
                   placeholder="SCU"
                 />
               </div>
-              <div className="mb-3">
+              <div className="grid grid-cols-2 gap-2 mb-3">
                 <input
                   type="number"
                   value={editing.availableMinutes ?? ""}
@@ -139,8 +151,20 @@ export default function Home() {
                       availableMinutes: e.target.value ? Number(e.target.value) : undefined,
                     })
                   }
-                  className="w-full rounded bg-ink border border-elevated px-2 py-1"
-                  placeholder="Time left (minutes)"
+                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  placeholder="Time left (min)"
+                />
+                <input
+                  type="number"
+                  value={editing.maxContainerSize ?? ""}
+                  onChange={(e) =>
+                    setEditing({
+                      ...editing,
+                      maxContainerSize: e.target.value ? Number(e.target.value) : undefined,
+                    })
+                  }
+                  className="rounded bg-ink border border-elevated px-2 py-1"
+                  placeholder="Max container (SCU)"
                 />
               </div>
               <div className="flex gap-2">
