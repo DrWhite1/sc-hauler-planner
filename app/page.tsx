@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { ShipSelector } from "@/components/ShipSelector";
+import { LocationSelector } from "@/components/LocationSelector";
 import { MissionForm } from "@/components/MissionForm";
 import { MissionOCR } from "@/components/MissionOCR";
 import { RouteView } from "@/components/RouteView";
@@ -31,6 +32,7 @@ export default function Home() {
       <div className="grid gap-6 md:grid-cols-3">
         <div className="md:col-span-1 space-y-6">
           <ShipSelector />
+          <LocationSelector />
           <MissionOCR />
           <MissionForm />
         </div>
