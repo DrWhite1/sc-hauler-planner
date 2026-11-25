@@ -18,8 +18,9 @@ export type Mission = {
   corporation?: string;
   rank?: string;
   legs?: Leg[];
-  availableMinutes?: number; // remaining time when added
-  addedAt?: number; // timestamp
+  availableMinutes?: number;
+  addedAt?: number;
+  maxContainerSize?: number; // largest container in this contract (SCU)
 };
 
 type State = {
