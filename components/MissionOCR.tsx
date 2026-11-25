@@ -3,24 +3,56 @@
 import { useState, useCallback, useEffect } from "react";
 import { createWorker } from "tesseract.js";
 import { useHaulerStore } from "@/lib/store";
-import { parseContractText } from "@/lib/parseContract";
+import { LOCATIONS } from "@/lib/locations";
+import {
+  parseContractText,
+  applySuggestedPickups,
+  scoreParse,
+  pickConsensus,
+  type ParsedContract,
+} from "@/lib/parseContract";
 
-// Crop the right half of the screenshot (reward + objectives), upscale 2x, grayscale.
-async function cropRightHalf(file: File): Promise<Blob> {
+const KNOWN_LOCATIONS = LOCATIONS.map((l) => l.name);
+
+type Region = { x0: number; y0: number; x1: number; y1: number };
+type OcrWord = { text: string; bbox: Region };
+
+// Crop a region of the screenshot, upscale it and make it grayscale for OCR.
+async function cropRegion(file: File, region: Region, scale: number): Promise<Blob> {
   const bmp = await createImageBitmap(file);
-  const x0 = Math.floor(bmp.width * 0.45);
-  const w = bmp.width - x0;
-  const scale = 2;
+  const x0 = Math.max(0, Math.floor(region.x0));
+  const y0 = Math.max(0, Math.floor(region.y0));
+  const w = Math.min(bmp.width, Math.ceil(region.x1)) - x0;
+  const h = Math.min(bmp.height, Math.ceil(region.y1)) - y0;
   const canvas = document.createElement("canvas");
   canvas.width = w * scale;
-  canvas.height = bmp.height * scale;
+  canvas.height = h * scale;
   const ctx = canvas.getContext("2d")!;
   ctx.filter = "grayscale(1) contrast(1.3)";
-  ctx.drawImage(bmp, x0, 0, w, bmp.height, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(bmp, x0, y0, w, h, 0, 0, canvas.width, canvas.height);
   bmp.close();
   return await new Promise<Blob>((resolve, reject) =>
     canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("toBlob failed"))), "image/png")
   );
+}
+
+// Find the "PRIMARY OBJECTIVES" heading in the first OCR pass and return the objectives
+// column: from the heading to the right edge, down to just above "ACCEPT OFFER".
+// Works for both layouts (objectives column at ~50% or ~64% of the width).
+function findObjectivesRegion(words: OcrWord[], width: number, height: number): Region | null {
+  const norm = (t: string) => t.replace(/[^a-z]/gi, "").toLowerCase();
+  const primary = words.find((w) => norm(w.text) === "primary");
+  const objectives = words.find((w) => norm(w.text) === "objectives");
+  const anchor = primary ?? objectives;
+  if (!anchor) return null;
+  const heading = objectives ?? anchor;
+  const accept = words.find((w) => norm(w.text) === "accept" && w.bbox.y0 > heading.bbox.y1);
+  return {
+    x0: anchor.bbox.x0 - width * 0.015,
+    y0: heading.bbox.y0 - height * 0.03,
+    x1: width,
+    y1: accept ? accept.bbox.y0 : height * 0.9,
+  };
 }
 
 export function MissionOCR() {
@@ -28,7 +60,24 @@ export function MissionOCR() {
   const [status, setStatus] = useState<string | null>(null);
   const [preview, setPreview] = useState<string | null>(null);
   const [extracted, setExtracted] = useState<string | null>(null);
-  const [parsed, setParsed] = useState<ReturnType<typeof parseContractText> | null>(null);
+  const [parsed, setParsed] = useState<ParsedContract | null>(null);
+
+  const addFromResult = useCallback(
+    (result: ParsedContract) => {
+      addMission({
+        pickup: result.pickup.slice(0, 120),
+        dropoff: result.dropoff.slice(0, 120),
+        reward: result.reward,
+        scu: result.totalScu || 0,
+        corporation: result.corporation || "Unknown",
+        legs: result.legs.length > 0 ? result.legs : undefined,
+        maxContainerSize: result.maxContainerSize,
+      });
+      const legNote = result.legs.length > 2 ? ` · ${result.legs.length} legs` : "";
+      setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC${legNote}`);
+    },
+    [addMission]
+  );
 
   const processImage = useCallback(async (file: File) => {
     setStatus("Reading screenshot...");
@@ -42,25 +91,51 @@ export function MissionOCR() {
       const { data } = await worker.recognize(file);
 
       let text = data.text;
-      let result = parseContractText(text);
+      let result = parseContractText(text, KNOWN_LOCATIONS);
+      const reads: ParsedContract[] = [];
 
-      // Two-column contract screens often come out interleaved (story text mixed into
-      // the objectives). If the first read is incomplete, re-read only the right-hand
-      // half (rewards + objectives), upscaled and in grayscale, as one text block.
-      if (!result.complete) {
+      // Contract screens come out interleaved (list, story text and objectives mixed) when read
+      // whole, and a single read can mis-read a digit. Re-read the objectives column and only
+      // trust a result that two reads agree on.
+      {
         try {
-          const crop = await cropRightHalf(file);
-          await worker.setParameters({ tessedit_pageseg_mode: "6" as any });
-          const second = await worker.recognize(crop);
-          const result2 = parseContractText(second.data.text);
-          const score = (r: typeof result) =>
-            (r.complete ? 100 : 0) + r.delivers.length + r.collects.length + (r.reward ? 1 : 0);
-          if (score(result2) >= score(result)) {
-            result = result2;
-            text = second.data.text;
+          const bmp = await createImageBitmap(file);
+          const width = bmp.width;
+          const height = bmp.height;
+          bmp.close();
+          const words = ((data as unknown as { words?: OcrWord[] }).words ?? []) as OcrWord[];
+          const region: Region = findObjectivesRegion(words, width, height) ?? {
+            x0: width * 0.5,
+            y0: 0,
+            x1: width,
+            y1: height * 0.9,
+          };
+          const passes: { scale: number; psm: string }[] = [
+            { scale: 3, psm: "4" },
+            { scale: 2, psm: "6" },
+            { scale: 2, psm: "4" },
+            { scale: 3, psm: "6" },
+          ];
+          reads.push(result);
+          for (const pass of passes) {
+            const crop = await cropRegion(file, region, pass.scale);
+            await worker.setParameters({ tessedit_pageseg_mode: pass.psm as any });
+            const second = await worker.recognize(crop);
+            const next = parseContractText(second.data.text, KNOWN_LOCATIONS);
+            // Reward, corporation and the DETAILS pickup hint sit outside the objectives crop.
+            if (!next.reward) next.reward = result.reward;
+            if (!next.corporation) next.corporation = result.corporation;
+            if (!next.suggestedPickup) next.suggestedPickup = result.suggestedPickup;
+            reads.push(next);
+            if (scoreParse(next) > scoreParse(result)) {
+              result = next;
+              text = second.data.text;
+            }
+            // Stop as soon as two complete reads agree on every quantity and location.
+            if (pickConsensus(reads).state === "agreed") break;
           }
         } catch (cropErr) {
-          console.warn("right-half OCR pass failed", cropErr);
+          console.warn("objectives-column OCR pass failed", cropErr);
         }
       }
       await worker.terminate();
@@ -68,30 +143,28 @@ export function MissionOCR() {
       setExtracted(text);
       setParsed(result);
 
-      if (result.reward && result.pickup && result.dropoff && result.complete) {
-        addMission({
-          pickup: result.pickup.slice(0, 120),
-          dropoff: result.dropoff.slice(0, 120),
-          reward: result.reward,
-          scu: result.totalScu || 0,
-          corporation: result.corporation || "Unknown",
-          legs: result.legs.length > 0 ? result.legs : undefined,
-          maxContainerSize: result.maxContainerSize,
-        });
-        const legNote = result.legs.length > 2 ? ` · ${result.legs.length} legs` : "";
-        setStatus(`Added: ${result.totalScu || "?"} SCU · ${result.reward.toLocaleString()} aUEC${legNote}`);
-      } else if (result.missingPickups.length > 0) {
-        setStatus(
-          `Read ${result.collects.length} of ${result.delivers.length} pickups (missing: ${result.missingPickups.join(", ")}). Not added. Re-crop the screenshot or add manually.`
-        );
+      // A complete first read that needed no crop pass still counts as one read.
+      if (reads.length === 0) reads.push(result);
+      const consensus = pickConsensus(reads);
+      if (consensus.chosen) {
+        result = consensus.chosen;
+        setParsed(result);
+      }
+
+      if (consensus.state === "conflict") {
+        setStatus(`Not added: OCR reads disagree (${consensus.detail}). Try a sharper screenshot or add manually.`);
+      } else if (result.complete && !result.reward) {
+        setStatus("Objectives read, but the reward was not found. Not added; add it manually.");
+      } else if (result.complete) {
+        addFromResult(result);
       } else {
-        setStatus("Partial data found — review below and add manually if needed");
+        setStatus(`Not added: ${result.warnings.join("; ") || "nothing readable found"}`);
       }
     } catch (err) {
       console.error(err);
       setStatus("OCR failed — try a clearer screenshot");
     }
-  }, [addMission]);
+  }, [addFromResult]);
 
   useEffect(() => {
     const handler = (e: Event) => {
@@ -148,6 +221,20 @@ export function MissionOCR() {
       />
 
       {status && <p className="mt-2 text-xs text-gold">{status}</p>}
+
+      {parsed && !parsed.complete && parsed.suggestedPickup && parsed.missingPickups.length > 0 && (
+        <button
+          onClick={() => {
+            const applied = applySuggestedPickups(parsed);
+            setParsed(applied);
+            if (applied.complete && applied.reward) addFromResult(applied);
+            else setStatus(`Still not complete: ${applied.warnings.join("; ")}`);
+          }}
+          className="mt-2 rounded border border-gold/40 px-2 py-1 text-[11px] text-gold hover:bg-gold/10"
+        >
+          Use {parsed.suggestedPickup} as pickup for {parsed.missingPickups.join(", ")} and add
+        </button>
+      )}
 
       {preview && (
         <img src={preview} alt="preview" className="mt-3 max-h-32 rounded border border-elevated object-contain" />

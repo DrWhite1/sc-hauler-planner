@@ -1,4 +1,8 @@
-import { parseContractText } from "../lib/parseContract.ts";
+import { parseContractText as parse, applySuggestedPickups, pickConsensus } from "../lib/parseContract.ts";
+import { LOCATIONS } from "../lib/locations.ts";
+
+const known = LOCATIONS.map((l) => l.name);
+const parseContractText = (t) => parse(t, known);
 import assert from "node:assert/strict";
 
 // OCR output exactly as Jeroen pasted it (WhatsApp, 2026-11-25).
@@ -102,4 +106,101 @@ assert.deepEqual(r.collects.map((c) => c.scu), [2, 1, 4, 2]);
 assert.equal(r.collects[3].location, "HDMS-Oparei");
 assert.equal(r.complete, true);
 assert.equal(r.totalScu, 9);
+
+
+// ---- Covalex "Junior Rank - Direct Medium Cargo Haul" (in-game contracts screen, 2026-11-25) ----
+// NOTE: built from a desktop-Tesseract reproduction of Jeroen's screenshot, NOT from the app's own
+// "Extracted text" box. Replace with the real in-app text when available.
+
+// (a) Everything read, objectives column only.
+const cov = `Reward 57,750
+Contract Availability 1h 35m
+Contracted By Covalex Independent Contractors
+PRIMARY OBJECTIVES
+Deliver 0/37 SCU of Aluminum to Seraphim Station above
+Crusader.
+Collect Aluminum from ARC-L2 Lively Pathway
+Station.
+Deliver 0/35 SCU of Tungsten to Seraphim Station above
+Crusader.
+Collect Tungsten from ARC-L2 Lively Pathway
+Station.
+Deliver 0/21 SCU of Corundum to Seraphim Station above
+Crusader.
+Collect Corundum from ARC-L2 Lively Pathway
+Station.`;
+r = parseContractText(cov);
+console.log("COVALEX clean", JSON.stringify({ reward: r.reward, corp: r.corporation, scu: r.totalScu, pickup: r.pickup, dropoff: r.dropoff, scus: r.collects.map((c) => c.scu), complete: r.complete }));
+assert.equal(r.reward, 57750);
+assert.equal(r.corporation, "Covalex Independent Contractors");
+assert.equal(r.totalScu, 93);
+assert.equal(r.pickup, "ARC-L2 Lively Pathway");
+assert.equal(r.dropoff, "Seraphim Station");
+assert.deepEqual(r.collects.map((c) => c.scu), [37, 35, 21]);
+assert.equal(r.complete, true);
+
+// (b) What the app produced: left contract list interleaved into the sentences and the first
+// Deliver line not read. Must NOT be added, and must not leak list titles into location names.
+const covBad = `Reward 57,750
+Contracted By Covalex Independent Contractors
+JUNIOR RANK - DIRECT EXTRA SMALL 56k
+Collect Aluminum from ARC-L2 Lively Pathway Station.
+Deliver 0/35 SCU of Tungsten to Seraphim Station above
+Crusader.
+Collect Tungsten from ARC-L2 Lively Pathway JUNIOR RANK - DIRECT EXTRA SMALL 56k
+Station.
+Deliver 0/21 SCU of Corundum to Seraphim Station above Crusader.
+Collect Corundum from ARC-L2 Lively Pathway MEMBER RANK - MEDIUM CARGO HAUL 81k Station.`;
+r = parseContractText(covBad);
+console.log("COVALEX bad", JSON.stringify({ pickup: r.pickup, dropoff: r.dropoff, orphan: r.orphanCollects, warnings: r.warnings, complete: r.complete }));
+assert.equal(r.pickup, "ARC-L2 Lively Pathway");
+assert.ok(!/RANK|56k|81k|Seraphim/i.test(r.pickup));
+assert.deepEqual(r.orphanCollects, ["aluminum"]);
+assert.equal(r.complete, false);
+
+// (c) Collect lines unreadable (small text), DETAILS names the pickup: suggest it, apply only on request.
+const covNoCollect = `Reward 57,750
+Contracted By Covalex Independent Contractors
+Hi, A freight elevator at Lively Pathway Station at ArcCorp's L2
+Lagrange point has some cargo that needs to be delivered to a
+freight elevator at Seraphim Station above Crusader.
+PRIMARY OBJECTIVES
+Deliver 0/37 SCU of Aluminum to Seraphim Station above
+Deliver 0/35 SCU of Tungsten to Seraphim Station above
+Deliver 0/21 SCU of Corundum to Seraphim Station above Crusader.`;
+r = parseContractText(covNoCollect);
+console.log("COVALEX no collects", JSON.stringify({ missing: r.missingPickups, suggested: r.suggestedPickup, complete: r.complete }));
+assert.equal(r.complete, false);
+assert.deepEqual(r.missingPickups, ["aluminum", "tungsten", "corundum"]);
+assert.equal(r.suggestedPickup, "ARC-L2 Lively Pathway");
+const r2 = applySuggestedPickups(r);
+assert.equal(r2.complete, true);
+assert.equal(r2.pickup, "ARC-L2 Lively Pathway");
+assert.equal(r2.totalScu, 93);
+assert.deepEqual(r2.collects.map((c) => c.scu), [37, 35, 21]);
+
+// OCR slips: L-code letters, spelling of commodity between collect and deliver, "O/" for "0/".
+r = parseContractText(`Reward 20,000
+Deliver O/12 SCU of Tungsten to Seraphim Station.
+Collect Tungsfen from ARC-LZ Lively Pathway Station.`);
+assert.equal(r.pickup, "ARC-L2 Lively Pathway");
+assert.equal(r.complete, true);
+
+// Unknown location is flagged, never stored raw.
+r = parseContractText(`Reward 20,000
+Deliver 0/4 SCU of Gold to Seraphim Station.
+Collect Gold from Nowhere Outpost.`);
+assert.equal(r.complete, false);
+assert.equal(r.pickup, "");
+assert.ok(r.unknownLocations.length === 1);
+// consensus voting: a single misread digit (4 read as 74) must not be accepted silently
+{
+  const mk = (n) => parse(`Deliver 0/${n} SCU of Agricium to Seraphim Station.\nCollect Agricium from Port Olisar.`, known);
+  const a = mk(4), b = mk(74), c = mk(4);
+  assert.equal(pickConsensus([a, c]).state, "agreed");
+  assert.equal(pickConsensus([a, b]).state, "conflict");
+  assert.equal(pickConsensus([a, b, c]).state, "agreed");
+  assert.equal(pickConsensus([a]).state, "single");
+  assert.equal(pickConsensus([]).state, "none");
+}
 console.log("ALL TESTS PASSED");
