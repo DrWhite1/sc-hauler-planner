@@ -17,7 +17,6 @@ export function RouteMap() {
 
   if (!route || route.stops.length === 0) return null;
 
-  // Collapse consecutive stops at the same location into one node
   const nodes: { location: string; types: Set<string>; scu: number }[] = [];
   for (const s of route.stops) {
     const last = nodes[nodes.length - 1];
@@ -29,39 +28,43 @@ export function RouteMap() {
     }
   }
 
+  const color = (types: Set<string>) => {
+    if (types.has("pickup") && types.has("dropoff")) return "bg-gold border-gold";
+    if (types.has("pickup")) return "bg-sage border-sage";
+    return "bg-gold/80 border-gold";
+  };
+
   return (
-    <div className="rounded-lg border border-elevated bg-elevated/50 p-4 mt-4">
-      <h3 className="text-sm font-medium uppercase tracking-wider text-accent/60 mb-4">
-        Route Map
+    <div className="rounded-lg border border-elevated bg-elevated/40 p-4 mt-4">
+      <h3 className="text-xs font-medium uppercase tracking-wider text-accent/50 mb-4">
+        Route
       </h3>
-      <div className="flex items-center gap-2 overflow-x-auto pb-2">
+      <div className="flex items-center gap-1 overflow-x-auto pb-1">
         {currentLocation && (
           <>
-            <div className="flex-shrink-0 text-center">
-              <div className="w-3 h-3 rounded-full bg-accent/40 mx-auto mb-1" />
-              <div className="text-[10px] text-accent/50 max-w-[80px] truncate">{currentLocation}</div>
+            <div className="flex-shrink-0 text-center w-16">
+              <div className="w-8 h-8 rounded-full border-2 border-accent/30 bg-ink mx-auto flex items-center justify-center text-[10px] text-accent/60">
+                You
+              </div>
+              <div className="text-[9px] text-accent/40 mt-1 truncate">{currentLocation}</div>
             </div>
-            <div className="flex-shrink-0 w-8 h-px bg-elevated" />
+            <div className="flex-shrink-0 text-accent/30 text-lg">→</div>
           </>
         )}
         {nodes.map((node, i) => (
-          <div key={i} className="flex items-center gap-2 flex-shrink-0">
-            <div className="text-center">
+          <div key={i} className="flex items-center gap-1 flex-shrink-0">
+            <div className="text-center w-20">
               <div
-                className={`w-4 h-4 rounded-full mx-auto mb-1 ${
-                  node.types.has("pickup") && node.types.has("dropoff")
-                    ? "bg-gold"
-                    : node.types.has("pickup")
-                    ? "bg-sage"
-                    : "bg-gold/70"
-                }`}
-              />
-              <div className="text-[10px] max-w-[90px] truncate" title={node.location}>
+                className={`w-9 h-9 rounded-full border-2 mx-auto flex items-center justify-center text-[10px] font-medium text-ink ${color(node.types)}`}
+              >
+                {node.types.has("pickup") && node.types.has("dropoff") ? "P/D" : node.types.has("pickup") ? "P" : "D"}
+              </div>
+              <div className="text-[10px] mt-1 truncate" title={node.location}>
                 {node.location.replace(/ above .*/, "")}
               </div>
               <div className="text-[9px] text-accent/40">{node.scu} SCU</div>
             </div>
-            {i < nodes.length - 1 && <div className="w-8 h-px bg-elevated" />}
+            {i < nodes.length - 1 && <div className="flex-shrink-0 text-accent/30 text-lg">→</div>}
           </div>
         ))}
       </div>
