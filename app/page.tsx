@@ -10,6 +10,7 @@ import { RouteView } from "@/components/RouteView";
 import { RouteMap } from "@/components/RouteMap";
 import { PackingView } from "@/components/PackingView";
 import { CargoGrid } from "@/components/CargoGrid";
+import { VoicePanel } from "@/components/VoicePanel";
 import { useHaulerStore, type Mission } from "@/lib/store";
 import { planRoute } from "@/lib/optimizer";
 
@@ -75,6 +76,7 @@ export default function Home() {
           <ShipSelector />
           <LocationSelector />
           <MissionProgress />
+          <VoicePanel />
           <details className="panel">
             <summary className="px-4 py-2.5 text-xs uppercase tracking-wider text-accent/50 cursor-pointer">
               Add / OCR
@@ -144,7 +146,6 @@ export default function Home() {
             </div>
           )}
 
-          {/* Route next to Packing + Grid */}
           <div className="grid gap-3 lg:grid-cols-5">
             <div className="lg:col-span-3 space-y-3">
               <RouteView />
