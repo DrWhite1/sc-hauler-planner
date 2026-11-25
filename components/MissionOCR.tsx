@@ -8,11 +8,33 @@ function parseContractText(text: string) {
   const lines = text.split(/\n+/).map((l) => l.trim()).filter(Boolean);
   const full = text.replace(/\s+/g, " ");
 
-  // Reward
+  // Reward: prefer large numbers (typical contracts are 20k–200k+) near "Reward" or aUEC
   let reward = 0;
-  const rewardMatch = full.match(/(?:Reward|aUEC|AUEC|H\s*)[\s:]*([\d,]+)/i) || full.match(/([\d,]{4,})/);
-  if (rewardMatch) {
-    reward = parseInt(rewardMatch[1].replace(/,/g, ""), 10);
+  const candidates: number[] = [];
+
+  // Look on lines containing Reward / aUEC
+  for (const line of lines) {
+    if (/reward|auec|aec/i.test(line)) {
+      const nums = line.match(/[\d,]{4,}/g) || [];
+      for (const n of nums) {
+        const v = parseInt(n.replace(/,/g, ""), 10);
+        if (v >= 10000) candidates.push(v);
+      }
+    }
+  }
+
+  // Fallback: any large number in the text that looks like a reward
+  if (candidates.length === 0) {
+    const allNums = full.match(/[\d,]{5,}/g) || [];
+    for (const n of allNums) {
+      const v = parseInt(n.replace(/,/g, ""), 10);
+      if (v >= 20000 && v < 500000) candidates.push(v);
+    }
+  }
+
+  if (candidates.length > 0) {
+    // Take the largest plausible reward
+    reward = Math.max(...candidates);
   }
 
   // Collect / Deliver pairs
@@ -35,16 +57,12 @@ function parseContractText(text: string) {
     }
   }
 
-  // Total SCU from delivers (or fallback)
   const totalScu = delivers.reduce((s, d) => s + d.scu, 0) || 0;
 
-  // Primary locations
   const pickupLocs = [...new Set(collects.map((c) => c.location))];
   const dropoffLocs = [...new Set(delivers.map((d) => d.location))];
 
-  const pickup = pickupLocs.length
-    ? pickupLocs.slice(0, 2).join(" + ")
-    : "";
+  const pickup = pickupLocs.length ? pickupLocs.slice(0, 2).join(" + ") : "";
   const dropoff = dropoffLocs[0] || "";
 
   return {
