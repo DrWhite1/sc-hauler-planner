@@ -7,6 +7,8 @@ import { MissionProgress } from "@/components/MissionProgress";
 import { MissionForm } from "@/components/MissionForm";
 import { MissionOCR } from "@/components/MissionOCR";
 import { RouteView } from "@/components/RouteView";
+import { RouteMap } from "@/components/RouteMap";
+import { PackingView } from "@/components/PackingView";
 import { useHaulerStore, type Mission } from "@/lib/store";
 
 function remainingMinutes(m: Mission): number | null {
@@ -189,6 +191,8 @@ export default function Home() {
 
           <div className="mt-6">
             <RouteView />
+            <RouteMap />
+            <PackingView />
           </div>
         </div>
       </div>
