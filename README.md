@@ -2,6 +2,8 @@
 
 Star Citizen hauler mission planner with OCR contract reading, route optimization, cargo grid visualization, and voice commands.
 
+![SC Hauler Planner: optimized route, packing order and cargo grid](docs/screenshot.png)
+
 ## Features
 
 - Screenshot OCR for contracts: local PaddleOCR in the desktop app (Windows and Linux), Tesseract.js as fallback and in the browser. Nothing is sent online
