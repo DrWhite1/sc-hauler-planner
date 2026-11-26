@@ -7,7 +7,7 @@ Star Citizen hauler mission planner with OCR contract reading, route optimizatio
 - Screenshot OCR for contracts: local PaddleOCR in the desktop app (Windows and Linux), Tesseract.js as fallback and in the browser. Nothing is sent online
 - Edit SCU per stop on a mission if the OCR misreads a number
 - Multi-stop mission support with running SCU tracking
-- Genetic algorithm route optimizer (capacity, deadlines, current location)
+- Route optimizer: the fastest stop order from your current location, using measured quantum distances (UEX Corp) for Stanton, Pyro and Nyx; checks every order up to 18 stops, never over the hold and never unloading before loading
 - Cargo grid visualization with load order: one square per SCU of the selected ship,
   "Fit to window" (no scrolling, even for a 4,608 SCU Hull C) or "Actual size"
 - Box-size breakdown per stop (32/16/8/4/2/1 SCU) from each mission's max container size
@@ -87,7 +87,7 @@ In another terminal:
 npm run electron:dev
 ```
 
-Tests: `node --experimental-strip-types tests/parseContract.test.mjs` (and `tests/routeValidity.test.mjs`).
+Tests: `npm test`.
 
 ## Notes
 
