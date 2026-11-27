@@ -5,6 +5,7 @@
   "description": "Star Citizen hauler mission planner",
   "author": "DrWhite1",
   "main": "electron/main.js",
+  "desktopName": "sc-hauler-planner.desktop",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -19,6 +20,7 @@
   "build": {
     "appId": "com.drwhite1.schaulerplanner",
     "productName": "SC Hauler Planner",
+    "icon": "build/icon.png",
     "directories": {
       "output": "dist"
     },
@@ -33,11 +35,18 @@
     ],
     "win": {
       "target": ["nsis"],
-      "icon": null
+      "icon": "build/icon.png"
     },
     "linux": {
       "target": ["AppImage"],
-      "category": "Utility"
+      "category": "Utility",
+      "icon": "build/icons",
+      "executableName": "sc-hauler-planner",
+      "desktop": {
+        "Name": "SC Hauler Planner",
+        "Icon": "sc-hauler-planner",
+        "StartupWMClass": "sc-hauler-planner"
+      }
     },
     "nsis": {
       "oneClick": false,

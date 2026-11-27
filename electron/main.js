@@ -14,6 +14,7 @@ function createWindow() {
     minHeight: 700,
     backgroundColor: "#07080a",
     title: "SC Hauler Planner",
+    icon: process.platform === "linux" ? path.join(__dirname, "icon.png") : undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -256,6 +257,10 @@ ipcMain.handle("vosk-download", async () => {
     }).on("error", reject);
   });
 });
+
+if (process.platform === "linux" && typeof app.setDesktopName === "function") {
+  app.setDesktopName("sc-hauler-planner.desktop");
+}
 
 app.whenReady().then(createWindow);
 
