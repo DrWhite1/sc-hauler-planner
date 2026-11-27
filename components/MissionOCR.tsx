@@ -17,7 +17,11 @@ const KNOWN_LOCATIONS = LOCATIONS.map((l) => l.name);
 const PARSE_OPTS = { systemOf };
 
 type LocalOcrApi = {
-  ocrContract?: (bytes: Uint8Array) => Promise<{ ok: boolean; header?: string; objectives?: string; error?: string }>;
+  ocrContract?: (
+    bytes: Uint8Array
+  ) => Promise<{ ok: boolean; header?: string; objectives?: string; error?: string; scanId?: string }>;
+  // Appends a timing line to <userData>/ocr.log in the desktop app.
+  ocrLog?: (entry: Record<string, unknown>) => void;
 };
 
 type Region = { x0: number; y0: number; x1: number; y1: number };
@@ -97,11 +101,22 @@ export function MissionOCR() {
       // Preferred engine: local PaddleOCR in the desktop app (much better on the game font).
       // If it is unavailable or its read is not complete, fall back to tesseract.js below.
       const api = (window as unknown as { electronAPI?: LocalOcrApi }).electronAPI;
+      const scanStart = performance.now();
+      const ms = (t: number) => Math.round(performance.now() - t);
+      let scanId = `r${Date.now().toString(36)}`;
+      const log = (event: string, fields: Record<string, unknown> = {}) => {
+        try {
+          api?.ocrLog?.({ scanId, event, ...fields });
+        } catch {}
+      };
       let localNote = "";
+      let fallbackReason = "no local OCR";
       if (api?.ocrContract) {
         try {
           setStatus("Reading screenshot (local OCR)...");
           const res = await api.ocrContract(new Uint8Array(await file.arrayBuffer()));
+          if (res.scanId) scanId = res.scanId;
+          fallbackReason = res.ok ? "local read incomplete" : `local OCR failed: ${res.error ?? "unknown"}`;
           if (res.ok && res.objectives) {
             const localText = `${res.header ?? ""}\n${res.objectives}`;
             const local = parseContractText(localText, KNOWN_LOCATIONS, PARSE_OPTS);
@@ -109,18 +124,29 @@ export function MissionOCR() {
             setParsed(local);
             if (local.complete && local.reward) {
               addFromResult(local);
+              log("local-accepted", { roundTripMs: ms(scanStart) });
               return;
             }
             localNote = local.complete ? "reward not found" : local.warnings.join("; ");
           }
         } catch (localErr) {
           console.warn("local OCR failed, using tesseract", localErr);
+          fallbackReason = `local OCR threw: ${String(localErr)}`;
         }
         setStatus("Local OCR was not conclusive, trying a second engine...");
       }
 
+      const localMs = ms(scanStart);
+      log("fallback-start", { reason: fallbackReason.slice(0, 200), localMs });
+      const tessStart = performance.now();
+      const tessPasses: { scale: number; psm: string; ms: number }[] = [];
+      let t = performance.now();
       const worker = await createWorker("eng");
+      const initMs = ms(t);
+      t = performance.now();
       const { data } = await worker.recognize(file);
+      const firstReadMs = ms(t);
+      let headerMs = 0;
 
       let text = data.text;
       let result = parseContractText(text, KNOWN_LOCATIONS, PARSE_OPTS);
@@ -153,6 +179,7 @@ export function MissionOCR() {
           ];
           reads.push(result);
           for (const pass of passes) {
+            const passStart = performance.now();
             const crop = await cropRegion(file, region, pass.scale);
             await worker.setParameters({ tessedit_pageseg_mode: pass.psm as any });
             const second = await worker.recognize(crop);
@@ -162,6 +189,7 @@ export function MissionOCR() {
             if (!next.corporation) next.corporation = result.corporation;
             if (!next.suggestedPickup) next.suggestedPickup = result.suggestedPickup;
             reads.push(next);
+            tessPasses.push({ scale: pass.scale, psm: pass.psm, ms: ms(passStart) });
             if (scoreParse(next) > scoreParse(result)) {
               result = next;
               text = second.data.text;
@@ -170,6 +198,7 @@ export function MissionOCR() {
             if (pickConsensus(reads).state === "agreed") break;
           }
           // Reward and corporation sit in the header box above the objectives, outside the crop.
+          const headerStart = performance.now();
           try {
             const header: Region = {
               x0: Math.max(0, region.x0),
@@ -189,11 +218,20 @@ export function MissionOCR() {
           } catch (hdrErr) {
             console.warn("header OCR pass failed", hdrErr);
           }
+          headerMs = ms(headerStart);
         } catch (cropErr) {
           console.warn("objectives-column OCR pass failed", cropErr);
         }
       }
       await worker.terminate();
+      log("tesseract-done", {
+        tesseractMs: ms(tessStart),
+        initMs,
+        firstReadMs,
+        passes: tessPasses,
+        headerMs,
+        scanMs: ms(scanStart),
+      });
 
       setExtracted(text);
       setParsed(result);

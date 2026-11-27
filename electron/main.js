@@ -132,36 +132,92 @@ ipcMain.handle("capture-screenshot", async () => {
   return img.toPNG().toString("base64");
 });
 
+// --- OCR timing log: <userData>/ocr.log (one line per event, local time) ---
+let ocrScanCounter = 0;
+function ocrLogPath() {
+  return path.join(app.getPath("userData"), "ocr.log");
+}
+function localStamp(d = new Date()) {
+  const pad = (n, w = 2) => String(n).padStart(w, "0");
+  const off = -d.getTimezoneOffset();
+  const sign = off >= 0 ? "+" : "-";
+  return (
+    `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ` +
+    `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${pad(d.getMilliseconds(), 3)} ` +
+    `${sign}${pad(Math.floor(Math.abs(off) / 60))}${pad(Math.abs(off) % 60)}`
+  );
+}
+function ocrLog(scanId, event, fields) {
+  try {
+    const file = ocrLogPath();
+    // Keep it small: roll over to ocr.log.1 past 1 MB.
+    try {
+      if (fs.statSync(file).size > 1024 * 1024) fs.renameSync(file, file + ".1");
+    } catch {}
+    const extra = fields ? " " + JSON.stringify(fields).slice(0, 4000) : "";
+    fs.appendFileSync(file, `${localStamp()} scan=${scanId} ${event}${extra}\n`);
+  } catch (err) {
+    console.log("ocr.log write failed:", err.message);
+  }
+}
+const tail = (text, n = 400) => String(text || "").trim().slice(-n).replace(/\s+/g, " ");
+
 ipcMain.handle("ocr-contract", (_e, bytes) => {
   return new Promise((resolve) => {
+    const scanId = `${Date.now().toString(36)}-${++ocrScanCounter}`;
     const file = path.join(os.tmpdir(), `sc-contract-${Date.now()}.img`);
     try {
       fs.writeFileSync(file, Buffer.from(bytes));
     } catch (err) {
-      resolve({ ok: false, error: String(err) });
+      ocrLog(scanId, "local-error", { error: String(err) });
+      resolve({ ok: false, error: String(err), scanId });
       return;
     }
     const worker = path.join(__dirname, "ocr-worker.js");
+    const started = Date.now();
+    ocrLog(scanId, "local-start", { bytes: bytes ? bytes.length : 0, electron: process.versions.electron, platform: process.platform });
     execFile(
       process.execPath,
       [worker, file],
       { env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" }, maxBuffer: 20 * 1024 * 1024, timeout: 90000 },
-      (err, stdout) => {
+      (err, stdout, stderr) => {
         try { fs.unlinkSync(file); } catch {}
+        const exit = {
+          ms: Date.now() - started,
+          code: err ? err.code ?? null : 0,
+          signal: err ? err.signal ?? null : null,
+          timedOut: Boolean(err && err.killed && err.signal === "SIGTERM"),
+        };
         const marker = String(stdout || "").lastIndexOf("@@OCR@@");
         if (marker === -1) {
           console.log("local OCR unavailable:", err ? err.message : "no output");
-          resolve({ ok: false, error: err ? err.message : "no output" });
+          ocrLog(scanId, "local-failed", { ...exit, stderr: tail(stderr) });
+          resolve({ ok: false, error: err ? err.message : "no output", scanId });
           return;
         }
         try {
-          resolve(JSON.parse(String(stdout).slice(marker + 7).trim()));
+          const res = JSON.parse(String(stdout).slice(marker + 7).trim());
+          ocrLog(scanId, res.ok ? "local-done" : "local-error", {
+            ...exit,
+            timing: res.timing,
+            ...(res.ok ? { found: res.found } : { error: res.error, stderr: tail(stderr) }),
+          });
+          delete res.timing;
+          resolve({ ...res, scanId });
         } catch (parseErr) {
-          resolve({ ok: false, error: String(parseErr) });
+          ocrLog(scanId, "local-failed", { ...exit, error: String(parseErr), stderr: tail(stderr) });
+          resolve({ ok: false, error: String(parseErr), scanId });
         }
       }
     );
   });
+});
+
+// Timings from the renderer (local result accepted, or the tesseract.js fallback).
+ipcMain.on("ocr-log", (_e, entry) => {
+  if (!entry || typeof entry !== "object") return;
+  const { scanId, event, ...fields } = entry;
+  ocrLog(String(scanId || "renderer").slice(0, 40), String(event || "renderer").slice(0, 40), fields);
 });
 
 ipcMain.handle("vosk-status", () => ({
