@@ -14,6 +14,8 @@ import { VoicePanel } from "@/components/VoicePanel";
 import { useHaulerStore, type Mission } from "@/lib/store";
 import { planRoute } from "@/lib/optimizer";
 import { STANDARD_CONTAINERS } from "@/lib/containers";
+import { LocationSelect } from "@/components/LocationSelect";
+import { setLegLocation, summarizeLegs, stopsWithoutPlace } from "@/lib/missionEdit";
 
 function remainingMinutes(m: Mission): number | null {
   if (!m.availableMinutes || !m.addedAt) return null;
@@ -38,7 +40,7 @@ export default function Home() {
     const scu = legs && legs.length > 0
       ? legs.filter((l) => l.type === "pickup").reduce((sum, l) => sum + l.scu, 0) || editing.scu
       : editing.scu;
-    updateMission(editing.id, { ...editing, scu });
+    updateMission(editing.id, summarizeLegs({ ...editing, scu }));
     setEditing(null);
   };
 
@@ -153,10 +155,19 @@ export default function Home() {
           {editing && (
             <div className="panel p-3 text-sm border-gold/30">
               <h3 className="font-medium mb-2 text-gold text-xs">Edit</h3>
-              <div className="grid grid-cols-2 gap-2 mb-2">
-                <input value={editing.pickup} onChange={(e) => setEditing({ ...editing, pickup: e.target.value })} className="rounded bg-ink border border-elevated px-2 py-1 text-xs" placeholder="Pickup" />
-                <input value={editing.dropoff} onChange={(e) => setEditing({ ...editing, dropoff: e.target.value })} className="rounded bg-ink border border-elevated px-2 py-1 text-xs" placeholder="Dropoff" />
-              </div>
+              {/* With stops (legs), the places are chosen per stop below; pickup/dropoff are their summary. */}
+              {!(editing.legs && editing.legs.length > 0) && (
+                <div className="grid grid-cols-2 gap-2 mb-2">
+                  <label className="text-[10px] text-accent/50">
+                    Pickup
+                    <LocationSelect value={editing.pickup} onChange={(v) => setEditing({ ...editing, pickup: v })} ariaLabel="Pickup place" className="mt-0.5 w-full" />
+                  </label>
+                  <label className="text-[10px] text-accent/50">
+                    Drop-off
+                    <LocationSelect value={editing.dropoff} onChange={(v) => setEditing({ ...editing, dropoff: v })} ariaLabel="Drop-off place" className="mt-0.5 w-full" />
+                  </label>
+                </div>
+              )}
               <div className="grid grid-cols-3 gap-2 mb-2">
                 <label className="text-[10px] text-accent/50">
                   Reward (aUEC)
@@ -189,15 +200,19 @@ export default function Home() {
               </div>
               {editing.legs && editing.legs.length > 0 && (
                 <div className="mb-2 space-y-1">
-                  <div className="text-[10px] text-accent/50">SCU per stop (fix a misread)</div>
+                  <div className="text-[10px] text-accent/50">Place and SCU per stop (fix a misread)</div>
                   {editing.legs.map((l, i) => (
                     <div key={i} className="flex items-center gap-2 text-xs">
                       <span className={`w-14 ${l.type === "pickup" ? "text-sage" : "text-gold/80"}`}>
                         {l.type === "pickup" ? "Pickup" : "Deliver"}
                       </span>
-                      <span className="flex-1 truncate text-accent/70">
-                        {l.commodity ? `${l.commodity} · ` : ""}{l.location.replace(/ above .*/, "")}
-                      </span>
+                      {l.commodity && <span className="w-16 truncate text-accent/50" title={l.commodity}>{l.commodity}</span>}
+                      <LocationSelect
+                        value={l.location}
+                        onChange={(v) => setEditing(setLegLocation(editing, i, v))}
+                        ariaLabel={`Place ${l.type === "pickup" ? "pickup" : "delivery"} ${i + 1}`}
+                        className="flex-1 min-w-0"
+                      />
                       <input
                         type="number"
                         min={0}
@@ -208,6 +223,11 @@ export default function Home() {
                       />
                     </div>
                   ))}
+                  {stopsWithoutPlace(editing).length > 0 && (
+                    <div className="text-[10px] text-red-400">
+                      {stopsWithoutPlace(editing).length} stop(s) have no place yet. Choose it from the list; until then the route counts it as an unknown place.
+                    </div>
+                  )}
                   {legTotals(editing).pickup !== legTotals(editing).dropoff && (
                     <div className="text-[10px] text-red-400">
                       Pickups total {legTotals(editing).pickup} SCU but deliveries total {legTotals(editing).dropoff}. Fix both sides so the route stays valid.

@@ -727,3 +727,33 @@ export function mergeReads(reads: ParsedContract[]): Merged {
   );
   return { chosen: merged, detail: "" };
 }
+
+// A read that is complete except for places that could not be read (or were read at their own
+// drop-off). The user can add it and pick those places in the mission's Edit panel.
+export function onlyPlacesMissing(r: ParsedContract): boolean {
+  return (
+    !r.complete &&
+    r.unknownLocations.length > 0 &&
+    r.delivers.length > 0 &&
+    r.collects.length > 0 &&
+    r.missingPickups.length === 0 &&
+    r.orphanCollects.length === 0 &&
+    r.collects.every((c) => c.scu > 0) &&
+    r.delivers.every((d) => d.scu > 0) &&
+    !r.warnings.some((w) => /could not be read/.test(w))
+  );
+}
+
+// Legs for every objective, with "" as the place where it was not read.
+export function legsWithUnplaced(r: ParsedContract): Leg[] {
+  return [
+    ...r.collects.map((c) => ({
+      type: "pickup" as const,
+      location: c.location,
+      scu: c.scu,
+      commodity: c.commodity,
+      ...(c.scuEstimated ? { scuEstimated: true } : {}),
+    })),
+    ...r.delivers.map((d) => ({ type: "dropoff" as const, location: d.location, scu: d.scu, commodity: d.commodity })),
+  ];
+}

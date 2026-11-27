@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node tests/parseContract.test.mjs && node tests/routeValidity.test.mjs && node tests/containers.test.mjs && node tests/locations.test.mjs && node tests/cargoGrid.test.mjs && node tests/ocrMultiCollect.test.mjs && node --import ./tests/ts-resolve.mjs tests/collectDropoff.test.mjs && node --import ./tests/ts-resolve.mjs tests/optimizer.test.mjs",
+    "test": "node tests/parseContract.test.mjs && node tests/routeValidity.test.mjs && node tests/containers.test.mjs && node tests/locations.test.mjs && node tests/cargoGrid.test.mjs && node tests/ocrMultiCollect.test.mjs && node --import ./tests/ts-resolve.mjs tests/collectDropoff.test.mjs && node --import ./tests/ts-resolve.mjs tests/missionEdit.test.mjs && node --import ./tests/ts-resolve.mjs tests/optimizer.test.mjs",
     "electron:dev": "node scripts/ensure-sharp-wasm.js && electron .",
     "electron:build": "next build && electron-builder",
     "dist:win": "next build && electron-builder --win",

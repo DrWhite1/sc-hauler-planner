@@ -7,6 +7,8 @@ import { LOCATIONS, systemOf } from "@/lib/locations";
 import {
   parseContractText,
   applySuggestedPickups,
+  onlyPlacesMissing,
+  legsWithUnplaced,
   scoreParse,
   pickConsensus,
   mergeReads,
@@ -338,6 +340,21 @@ export function MissionOCR() {
         </button>
       )}
 
+      {parsed && onlyPlacesMissing(parsed) && (
+        <button
+          onClick={() => {
+            const legs = legsWithUnplaced(parsed);
+            addFromResult({ ...parsed, legs });
+            setStatus(
+              `Added with ${legs.filter((l) => !l.location).length} place(s) missing: open the mission (Edit) and choose them from the list.`
+            );
+          }}
+          className="mt-2 ml-2 rounded border border-gold/40 px-2 py-1 text-[11px] text-gold hover:bg-gold/10"
+        >
+          Add anyway and choose the missing place in Edit
+        </button>
+      )}
+
       {preview && (
         <img src={preview} alt="preview" className="mt-3 max-h-32 rounded border border-elevated object-contain" />
       )}
@@ -346,7 +363,7 @@ export function MissionOCR() {
         <div className="mt-3 text-xs space-y-1 text-accent/80">
           {parsed.collects.map((c, i) => (
             <div key={`c${i}`}>
-              Collect {c.scuEstimated ? "≈" : ""}{c.scu || "?"} SCU {c.commodity} from {c.location}
+              Collect {c.scuEstimated ? "≈" : ""}{c.scu || "?"} SCU {c.commodity} from {c.location || "(place not read)"}
             </div>
           ))}
           {parsed.delivers.map((d, i) => (
