@@ -120,7 +120,7 @@ export function RouteView() {
                 <span className={g.type === "pickup" ? "text-sage" : "text-gold/90"}>
                   {g.type === "pickup" ? "Pickup" : "Deliver"}
                 </span>
-                <span className="text-accent/70 truncate">{g.location}</span>
+                <span className={g.location ? "text-accent/70 truncate" : "text-red-400 truncate"}>{g.location || "Place not set (Edit the mission)"}</span>
                 {ext && (
                   <span className="text-[9px] px-1.5 py-0.5 rounded bg-sage/20 text-sage border border-sage/30">
                     EXT

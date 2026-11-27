@@ -8,5 +8,6 @@ contextBridge.exposeInMainWorld("electronAPI", {
   voskFinal: () => ipcRenderer.invoke("vosk-final"),
   downloadModel: () => ipcRenderer.invoke("vosk-download"),
   ocrContract: (bytes) => ipcRenderer.invoke("ocr-contract", bytes),
+  ocrLog: (entry) => ipcRenderer.send("ocr-log", entry),
   captureScreenshot: () => ipcRenderer.invoke("capture-screenshot"),
 });

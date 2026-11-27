@@ -91,7 +91,29 @@ function windowAfter(full: string, from: number, len = 80): string {
   return w;
 }
 
+// The window may hold line breaks (see parseContractText). The place belongs on the line of its
+// "from"/"to": the briefing column is read between objective lines, so a later line is often prose
+// such as "...taken over to a freight elevator at Ruin Station above Pyro VI." that names the
+// contract's destination. So: a known place on the first line wins; a first line that is the start
+// of a known name ("Starlight Service" wrapped before "Station") is that name; a well-formed unknown
+// name on the first line is kept as read. Only when the first line is empty does the search go on
+// to the following text.
 export function matchLocation(windowText: string, known: string[] = []): LocationMatch {
+  const nl = windowText.search(/\n/);
+  if (nl === -1) return matchLocationFlat(windowText, known);
+  const first = windowText.slice(0, nl);
+  if (!/[a-z]{3}/i.test(stripListNoise(first))) return matchLocationFlat(windowText.replace(/\n/g, " "), known);
+  const onLine = matchLocationFlat(first, known);
+  if (onLine.name && onLine.listed !== false) return onLine;
+  const head = stripListNoise(first).toLowerCase().replace(/[.,;:]+$/, "").trim();
+  if (head.length >= 6) {
+    const wrapped = known.filter((k) => k.toLowerCase().startsWith(head + " "));
+    if (wrapped.length === 1) return { name: wrapped[0], raw: stripListNoise(first).trim() };
+  }
+  return onLine;
+}
+
+function matchLocationFlat(windowText: string, known: string[] = []): LocationMatch {
   const cleaned = stripListNoise(windowText);
   const lower = normalizeLCodes(cleaned.toLowerCase());
   const raw = cleaned.replace(/-\s+(?=[0-9A-Za-z])/g, "-").split(/\.(?:\s|$)|\s+on\s+/i)[0].trim().replace(/\.$/, "").slice(0, 50);
@@ -268,6 +290,19 @@ function finalize(
     }
   }
 
+  // Collecting cargo at the place the same cargo is delivered to is not a hauling contract; it is
+  // a misread (typically the destination named in the briefing prose). Drop that place so the
+  // contract is reported as not fully read instead of planning a pickup at the drop-off.
+  const atDropoff: string[] = [];
+  for (const [ci, di] of collectFor) {
+    const c = collects[ci];
+    if (c.location && c.location === delivers[di].location) {
+      atDropoff.push(`${c.commodity} at ${c.location}`);
+      c.locationRaw = c.location;
+      c.location = "";
+    }
+  }
+
   const missingPickups = delivers.filter((_, i) => !used.has(i)).map((d) => d.commodity);
   const orphanCollects = collects.filter((_, i) => !pairedCollect.has(i)).map((c) => c.commodity);
   const unknownLocations: string[] = [];
@@ -286,6 +321,7 @@ function finalize(
   if (!collects.length && delivers.length) warnings.push("no pickup lines read");
   if (missingPickups.length) warnings.push(`no pickup read for: ${missingPickups.join(", ")}`);
   if (orphanCollects.length) warnings.push(`no matching delivery read for pickup: ${orphanCollects.join(", ")}`);
+  if (atDropoff.length) warnings.push(`pickup read at its own drop-off (misread): ${atDropoff.join("; ")}`);
   if (unknownLocations.length) warnings.push(`unrecognized location: ${unknownLocations.join("; ")}`);
 
   const complete =
@@ -386,7 +422,10 @@ export function parseContractText(
   opts: ParseOptions = {}
 ): ParsedContract {
   const text = cleanOcr(rawText);
-  const full = text.replace(/\s+/g, " ");
+  // Same text with each whitespace run as one character, so offsets match between the two:
+  // `full` for the patterns, `lined` (keeps line breaks) for the place after "to"/"from".
+  const lined = text.replace(/\s+/g, (w) => (w.includes("\n") ? "\n" : " "));
+  const full = lined.replace(/\n/g, " ");
 
   // Reward
   let reward = 0;
@@ -430,7 +469,7 @@ export function parseContractText(
   while ((m = deliverRe.exec(full)) !== null) {
     const scu = parseInt(m[1].replace(/[Oo]/g, "0").replace(/[Il]/g, "1"), 10);
     const commodity = cleanCommodity(m[2]);
-    const loc = matchLocation(windowAfter(full, m.index + m[0].length), knownLocations);
+    const loc = matchLocation(windowAfter(lined, m.index + m[0].length), knownLocations);
     if (commodity && scu > 0) delivers.push({ commodity, location: loc.name, scu, locationRaw: loc.raw });
   }
 
@@ -438,7 +477,7 @@ export function parseContractText(
   const collectRe = /collect\s+([a-z][a-z' ]{1,40}?)\s+(?:from|at)\s+/gi;
   while ((m = collectRe.exec(full)) !== null) {
     const commodity = cleanCommodity(m[1]);
-    const loc = matchLocation(windowAfter(full, m.index + m[0].length), knownLocations);
+    const loc = matchLocation(windowAfter(lined, m.index + m[0].length), knownLocations);
     if (commodity) collects.push({ commodity, location: loc.name, scu: 0, locationRaw: loc.raw });
   }
 
@@ -449,7 +488,7 @@ export function parseContractText(
     const esc = d.commodity.replace(/[^a-z' ]/g, "").replace(/ /g, "\\s+");
     const fm = new RegExp(`${esc}\\s+from\\s+`, "i").exec(full);
     if (!fm) continue;
-    const loc = matchLocation(windowAfter(full, fm.index + fm[0].length), knownLocations);
+    const loc = matchLocation(windowAfter(lined, fm.index + fm[0].length), knownLocations);
     collects.push({ commodity: d.commodity, location: loc.name, scu: 0, locationRaw: loc.raw });
   }
 
@@ -467,6 +506,10 @@ export function parseContractText(
         suggestedPickup;
     }
   }
+
+  // Collect contracts name their destination the same way ("...taken over to a freight elevator at
+  // Ruin Station"); a place the cargo is delivered to is never the pickup.
+  if (suggestedPickup && delivers.some((d) => d.location === suggestedPickup)) suggestedPickup = null;
 
   const expectedDelivers = (full.match(/\bdeliver\s*[0-9OoIl]+\s*\/\s*[0-9OoIl]+/gi) ?? []).length;
   const expectedCollects = (text.match(/(?:^|\n)[^A-Za-z0-9\n]*collect\b/gi) ?? []).length;
@@ -683,4 +726,34 @@ export function mergeReads(reads: ParsedContract[]): Merged {
     collects
   );
   return { chosen: merged, detail: "" };
+}
+
+// A read that is complete except for places that could not be read (or were read at their own
+// drop-off). The user can add it and pick those places in the mission's Edit panel.
+export function onlyPlacesMissing(r: ParsedContract): boolean {
+  return (
+    !r.complete &&
+    r.unknownLocations.length > 0 &&
+    r.delivers.length > 0 &&
+    r.collects.length > 0 &&
+    r.missingPickups.length === 0 &&
+    r.orphanCollects.length === 0 &&
+    r.collects.every((c) => c.scu > 0) &&
+    r.delivers.every((d) => d.scu > 0) &&
+    !r.warnings.some((w) => /could not be read/.test(w))
+  );
+}
+
+// Legs for every objective, with "" as the place where it was not read.
+export function legsWithUnplaced(r: ParsedContract): Leg[] {
+  return [
+    ...r.collects.map((c) => ({
+      type: "pickup" as const,
+      location: c.location,
+      scu: c.scu,
+      commodity: c.commodity,
+      ...(c.scuEstimated ? { scuEstimated: true } : {}),
+    })),
+    ...r.delivers.map((d) => ({ type: "dropoff" as const, location: d.location, scu: d.scu, commodity: d.commodity })),
+  ];
 }

@@ -110,3 +110,18 @@ export function hasExternalPort(locationName: string): boolean {
   if (parts.length === 0) return false;
   return parts.every((p) => findLocation(p)?.externalPort ?? false);
 }
+// Options for a place dropdown: the planner's locations grouped by system (Stanton, Pyro, Nyx),
+// alphabetical within each group. A current value that is not in the list (a place the OCR read
+// that the app does not know yet) is returned as `extra` so the dropdown can keep showing it.
+export const SYSTEM_ORDER: StarSystem[] = ["Stanton", "Pyro", "Nyx"];
+export type LocationOptionGroup = { system: StarSystem; options: { name: string; externalPort: boolean }[] };
+export function locationOptions(current = ""): { extra: string | null; groups: LocationOptionGroup[] } {
+  const groups = SYSTEM_ORDER.map((system) => ({
+    system,
+    options: LOCATIONS.filter((l) => (l.system ?? "Stanton") === system)
+      .map((l) => ({ name: l.name, externalPort: l.externalPort }))
+      .sort((a, b) => a.name.localeCompare(b.name, "en", { sensitivity: "base" })),
+  })).filter((g) => g.options.length > 0);
+  const extra = current && !LOCATIONS.some((l) => l.name === current) ? current : null;
+  return { extra, groups };
+}

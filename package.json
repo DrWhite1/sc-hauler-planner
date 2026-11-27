@@ -5,20 +5,22 @@
   "description": "Star Citizen hauler mission planner",
   "author": "DrWhite1",
   "main": "electron/main.js",
+  "desktopName": "sc-hauler-planner.desktop",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "test": "node tests/parseContract.test.mjs && node tests/routeValidity.test.mjs && node tests/containers.test.mjs && node tests/locations.test.mjs && node tests/cargoGrid.test.mjs && node tests/ocrMultiCollect.test.mjs && node --import ./tests/ts-resolve.mjs tests/optimizer.test.mjs",
-    "electron:dev": "electron .",
+    "test": "node tests/parseContract.test.mjs && node tests/routeValidity.test.mjs && node tests/containers.test.mjs && node tests/locations.test.mjs && node tests/cargoGrid.test.mjs && node tests/ocrMultiCollect.test.mjs && node --import ./tests/ts-resolve.mjs tests/collectDropoff.test.mjs && node --import ./tests/ts-resolve.mjs tests/missionEdit.test.mjs && node --import ./tests/ts-resolve.mjs tests/optimizer.test.mjs",
+    "electron:dev": "node scripts/ensure-sharp-wasm.js && electron .",
     "electron:build": "next build && electron-builder",
     "dist:win": "next build && electron-builder --win",
-    "dist:linux": "next build && electron-builder --linux"
+    "dist:linux": "node scripts/ensure-sharp-wasm.js && next build && electron-builder --linux"
   },
   "build": {
     "appId": "com.drwhite1.schaulerplanner",
     "productName": "SC Hauler Planner",
+    "icon": "build/icon.png",
     "directories": {
       "output": "dist"
     },
@@ -33,11 +35,18 @@
     ],
     "win": {
       "target": ["nsis"],
-      "icon": null
+      "icon": "build/icon.png"
     },
     "linux": {
       "target": ["AppImage"],
-      "category": "Utility"
+      "category": "Utility",
+      "icon": "build/icons",
+      "executableName": "sc-hauler-planner",
+      "desktop": {
+        "Name": "SC Hauler Planner",
+        "Icon": "sc-hauler-planner",
+        "StartupWMClass": "sc-hauler-planner"
+      }
     },
     "nsis": {
       "oneClick": false,
